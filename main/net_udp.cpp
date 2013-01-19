@@ -188,7 +188,6 @@ static int udp_dns_filladdr(const char *host, int port, struct _sockaddr *sAddr 
 
 	// Now copy it over
 	memcpy( sAddr, result->ai_addr, result->ai_addrlen );
-	memset( (unsigned char *)&sAddr + result->ai_addrlen, 0, sizeof(sAddr) - result->ai_addrlen );
 
 	/* WARNING:  NERDY CONTENT
 	 *
@@ -394,9 +393,6 @@ static int udp_receive_packet(int socknum, ubyte *text, int len, struct _sockadd
 /* Tracker initialization */
 int udp_tracker_init()
 {
-	// Zero it out
-	memset( &TrackerSocket, 0, sizeof( TrackerSocket ) );
-
 	// Open the socket
 	udp_open_socket( 2, d_rand() % 0xffff );
 
@@ -492,9 +488,6 @@ int udp_tracker_process_game( ubyte *data, int data_len )
 	int iPort = 0;
 	int bIPv6 = 0;
 	char *sIP = NULL;
-
-	// Zero it out
-	memset( &sAddr, 0, sizeof( sAddr ) );
 
 	// Get the IPv6 flag from the tracker
 	bIPv6 = data[iPos++];
@@ -981,10 +974,8 @@ void net_udp_list_join_game()
 			nm_messagebox(TXT_WARNING, 1, TXT_OK, "Cannot open default port!\nYou can only scan for games\nmanually.");
 
 	// prepare broadcast address to discover games
-	memset(&GBcast, '\0', sizeof(struct _sockaddr));
 	udp_dns_filladdr(UDP_BCAST_ADDR, UDP_PORT_DEFAULT, &GBcast);
 #ifdef IPv6
-	memset(&GMcast_v6, '\0', sizeof(struct _sockaddr));
 	udp_dns_filladdr(UDP_MCASTv6_ADDR, UDP_PORT_DEFAULT, &GMcast_v6);
 #endif
 
@@ -3747,10 +3738,8 @@ int net_udp_start_game(void)
 		return 0;
 
 	// prepare broadcast address to announce our game
-	memset(&GBcast, '\0', sizeof(struct _sockaddr));
 	udp_dns_filladdr(UDP_BCAST_ADDR, UDP_PORT_DEFAULT, &GBcast);
 #ifdef IPv6
-	memset(&GMcast_v6, '\0', sizeof(struct _sockaddr));
 	udp_dns_filladdr(UDP_MCASTv6_ADDR, UDP_PORT_DEFAULT, &GMcast_v6);
 #endif
 	d_srand( (fix)timer_query() );

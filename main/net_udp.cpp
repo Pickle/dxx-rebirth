@@ -224,8 +224,6 @@ static void udp_close_socket(int socknum)
 // Open socket
 static int udp_open_socket(int socknum, int port, int af = _pf)
 {
-	int bcast = 1;
-	int sinlen;
 
 	// close stale socket
 	if( UDP_Socket[socknum] != -1 )
@@ -243,6 +241,7 @@ static int udp_open_socket(int socknum, int port, int af = _pf)
 		return -1;
 	}
 
+	int sinlen;
 #ifdef IPv6
 	if (af == AF_INET6) {
 		sAddr.sin6_family = af; // host byte order
@@ -276,7 +275,6 @@ static int udp_open_socket(int socknum, int port, int af = _pf)
 		udp_close_socket(socknum);
 		return -1;
 	}
-	(void)setsockopt( UDP_Socket[socknum], SOL_SOCKET, SO_BROADCAST, (const char *) &bcast, sizeof(bcast) );
 #else
 	struct addrinfo hints,*res,*sres;
 	int err,ai_family_;
@@ -339,8 +337,9 @@ static int udp_open_socket(int socknum, int port, int af = _pf)
 		con_printf(CON_URGENT,"udp_open_socket (getaddrinfo):%s\n", gai_strerror (err));
 		nm_messagebox(TXT_ERROR,1,TXT_OK,"Could not get address information:\n%s",gai_strerror (err));
 	}
-	setsockopt( UDP_Socket[socknum], SOL_SOCKET, SO_BROADCAST, &bcast, sizeof(bcast) );
 #endif
+	int bcast = 1;
+	setsockopt( UDP_Socket[socknum], SOL_SOCKET, SO_BROADCAST, (const char *) &bcast, sizeof(bcast) );
 
 	return 0;
 	}

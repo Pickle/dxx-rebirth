@@ -1683,12 +1683,10 @@ static int save_level_sub(const char * filename, int)
 
 		if (Errors_in_mine) {
 			if (is_real_level(filename)) {
-				char  ErrorMessage[200];
 
-				sprintf( ErrorMessage, "Warning: %i errors in this mine!\n", Errors_in_mine );
 				gr_palette_load(gr_palette);
 
-				if (nm_messagebox( NULL, 2, "Cancel Save", "Save", ErrorMessage )!=1)	{
+				if (nm_messagebox( NULL, 2, "Cancel Save", "Save", "Warning: %i errors in this mine!\n", Errors_in_mine )!=1)	{
 					return 1;
 				}
 			}
@@ -1706,16 +1704,13 @@ static int save_level_sub(const char * filename, int)
 	SaveFile = PHYSFSX_openWriteBuffered(temp_filename);
 	if (!SaveFile)
 	{
-		char ErrorMessage[256];
-
 		char fname[20];
 		_splitpath( temp_filename, NULL, NULL, fname, NULL );
 
-		sprintf( ErrorMessage, \
+		gr_palette_load(gr_palette);
+		nm_messagebox( NULL, 1, "Ok",
 			"ERROR: Cannot write to '%s'.\nYou probably need to check out a locked\nversion of the file. You should save\nthis under a different filename, and then\ncheck out a locked copy by typing\n\'co -l %s.lvl'\nat the DOS prompt.\n"
 			, temp_filename, fname );
-		gr_palette_load(gr_palette);
-		nm_messagebox( NULL, 1, "Ok", ErrorMessage );
 		return 1;
 	}
 

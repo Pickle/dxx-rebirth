@@ -1396,7 +1396,7 @@ static void homing_missile_turn_towards_velocity(dxxobject *objp, vms_vector *no
  * For each difficulty setting we have a base value the homers will align to. This we express in a FPS value representing the homers turn radius of the original game (i.e. "The homer will turn like on XXFPS").
  * NOTE: Old homers only get valid track_goal every 8 frames. This does not apply anymore so these values are divided by 4 to compensate this.
  */
-fix homing_turn_base[NDL] = { 4, 5, 6, 7, 8 };
+static const fix homing_turn_base[NDL] = { 4, 5, 6, 7, 8 };
 #endif
 
 //-------------------------------------------------------------------------------------------

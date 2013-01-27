@@ -362,11 +362,7 @@ __extern_always_inline unsigned dxx_gr_check_printf_arguments_used(const char *f
 int gr_printf( int x, int y, const char * format, ... ) __attribute_gcc_format((printf, 3, 4));
 int gr_uprintf( int x, int y, const char * format, ... ) __attribute_gcc_format((printf, 3, 4));
 #endif
-void gr_get_bounded_string_size(const char *s, unsigned limit, int *string_width, int *string_height, int *average_width );
-static inline void gr_get_string_size(const char *s, int *string_width, int *string_height, int *average_width )
-{
-	gr_get_bounded_string_size(s, UINT_MAX, string_width, string_height, average_width);
-}
+void gr_get_string_size(const char *s, int *string_width, int *string_height, int *average_width );
 
 
 //  From roller.c

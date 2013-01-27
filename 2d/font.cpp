@@ -861,7 +861,7 @@ int gr_ustring(int x, int y, const char *s )
 }
 
 
-void gr_get_bounded_string_size(const char *s, unsigned limit, int *string_width, int *string_height, int *average_width )
+void gr_get_string_size(const char *s, int *string_width, int *string_height, int *average_width )
 {
 	int i = 0;
 	float width=0.0,spacing=0.0,longest_width=0.0,string_width_f=0.0,string_height_f=0.0;
@@ -885,8 +885,6 @@ void gr_get_bounded_string_size(const char *s, unsigned limit, int *string_width
 			}
 
 			if (*s == 0) break;
-			if (!--limit)
-				break;
 
 			get_char_width_f(s[0],s[1],&width,&spacing);
 

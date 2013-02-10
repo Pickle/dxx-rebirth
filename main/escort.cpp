@@ -727,6 +727,14 @@ static void escort_go_to_goal(dxxobject *objp, ai_static *aip, segnum_t goal_seg
 	}
 }
 
+static segnum_t assign_goal_object_exists_in_mine(segnum_t start_seg, int objtype, int objid, int special)
+{
+	objnum_t o = Escort_goal_index = exists_in_mine(start_seg, objtype, objid, special);
+	if (o == object_none || o == object_guidebot_cannot_reach)
+		return segment_none;
+	return Objects[o].segnum;
+}
+
 //	-----------------------------------------------------------------------------
 static void escort_create_path_to_goal(dxxobject *objp)
 {
@@ -742,26 +750,20 @@ static void escort_create_path_to_goal(dxxobject *objp)
 
 	if (Looking_for_marker != -1) {
 
-		Escort_goal_index = exists_in_mine(objp->segnum, OBJ_MARKER, Escort_goal_object-ESCORT_GOAL_MARKER1, -1);
-		if (Escort_goal_index != object_none)
-			goal_seg = Objects[Escort_goal_index].segnum;
+		goal_seg = assign_goal_object_exists_in_mine(objp->segnum, OBJ_MARKER, Escort_goal_object-ESCORT_GOAL_MARKER1, -1);
 	} else {
 		switch (Escort_goal_object) {
 			case ESCORT_GOAL_BLUE_KEY:
-				Escort_goal_index = exists_in_mine(objp->segnum, OBJ_POWERUP, POW_KEY_BLUE, -1);
-				if (Escort_goal_index != object_none) goal_seg = Objects[Escort_goal_index].segnum;
+				goal_seg = assign_goal_object_exists_in_mine(objp->segnum, OBJ_POWERUP, POW_KEY_BLUE, -1);
 				break;
 			case ESCORT_GOAL_GOLD_KEY:
-				Escort_goal_index = exists_in_mine(objp->segnum, OBJ_POWERUP, POW_KEY_GOLD, -1);
-				if (Escort_goal_index != object_none) goal_seg = Objects[Escort_goal_index].segnum;
+				goal_seg = assign_goal_object_exists_in_mine(objp->segnum, OBJ_POWERUP, POW_KEY_GOLD, -1);
 				break;
 			case ESCORT_GOAL_RED_KEY:
-				Escort_goal_index = exists_in_mine(objp->segnum, OBJ_POWERUP, POW_KEY_RED, -1);
-				if (Escort_goal_index != object_none) goal_seg = Objects[Escort_goal_index].segnum;
+				goal_seg = assign_goal_object_exists_in_mine(objp->segnum, OBJ_POWERUP, POW_KEY_RED, -1);
 				break;
 			case ESCORT_GOAL_CONTROLCEN:
-				Escort_goal_index = exists_in_mine(objp->segnum, OBJ_CNTRLCEN, -1, -1);
-				if (Escort_goal_index != object_none) goal_seg = Objects[Escort_goal_index].segnum;
+				goal_seg = assign_goal_object_exists_in_mine(objp->segnum, OBJ_CNTRLCEN, -1, -1);
 				break;
 			case ESCORT_GOAL_EXIT:
 				goal_seg = find_exit_segment();
@@ -770,8 +772,7 @@ static void escort_create_path_to_goal(dxxobject *objp)
 				say_escort_goal(Escort_goal_object);
 				return;
 			case ESCORT_GOAL_ENERGY:
-				Escort_goal_index = exists_in_mine(objp->segnum, OBJ_POWERUP, POW_ENERGY, -1);
-				if (Escort_goal_index != object_none) goal_seg = Objects[Escort_goal_index].segnum;
+				goal_seg = assign_goal_object_exists_in_mine(objp->segnum, OBJ_POWERUP, POW_ENERGY, -1);
 				break;
 			case ESCORT_GOAL_ENERGYCEN:
 				goal_seg = exists_fuelcen_in_mine(objp->segnum);
@@ -783,24 +784,19 @@ static void escort_create_path_to_goal(dxxobject *objp)
 					escort_go_to_goal(objp, aip, goal_seg);
 				return;
 			case ESCORT_GOAL_SHIELD:
-				Escort_goal_index = exists_in_mine(objp->segnum, OBJ_POWERUP, POW_SHIELD_BOOST, -1);
-				if (Escort_goal_index != object_none) goal_seg = Objects[Escort_goal_index].segnum;
+				goal_seg = assign_goal_object_exists_in_mine(objp->segnum, OBJ_POWERUP, POW_SHIELD_BOOST, -1);
 				break;
 			case ESCORT_GOAL_POWERUP:
-				Escort_goal_index = exists_in_mine(objp->segnum, OBJ_POWERUP, -1, -1);
-				if (Escort_goal_index != object_none) goal_seg = Objects[Escort_goal_index].segnum;
+				goal_seg = assign_goal_object_exists_in_mine(objp->segnum, OBJ_POWERUP, -1, -1);
 				break;
 			case ESCORT_GOAL_ROBOT:
-				Escort_goal_index = exists_in_mine(objp->segnum, OBJ_ROBOT, -1, -1);
-				if (Escort_goal_index != object_none) goal_seg = Objects[Escort_goal_index].segnum;
+				goal_seg = assign_goal_object_exists_in_mine(objp->segnum, OBJ_ROBOT, -1, -1);
 				break;
 			case ESCORT_GOAL_HOSTAGE:
-				Escort_goal_index = exists_in_mine(objp->segnum, OBJ_HOSTAGE, -1, -1);
-				if (Escort_goal_index != object_none) goal_seg = Objects[Escort_goal_index].segnum;
+				goal_seg = assign_goal_object_exists_in_mine(objp->segnum, OBJ_HOSTAGE, -1, -1);
 				break;
 			case ESCORT_GOAL_PLAYER_SPEW:
-				Escort_goal_index = exists_in_mine(objp->segnum, -1, -1, ESCORT_GOAL_PLAYER_SPEW);
-				if (Escort_goal_index != object_none) goal_seg = Objects[Escort_goal_index].segnum;
+				goal_seg = assign_goal_object_exists_in_mine(objp->segnum, -1, -1, ESCORT_GOAL_PLAYER_SPEW);
 				break;
 			case ESCORT_GOAL_SCRAM:
 				Escort_goal_index = object_first;
@@ -810,8 +806,7 @@ static void escort_create_path_to_goal(dxxobject *objp)
 
 				boss_id = get_boss_id();
 				Assert(boss_id != -1);
-				Escort_goal_index = exists_in_mine(objp->segnum, OBJ_ROBOT, boss_id, -1);
-				if (Escort_goal_index != object_none) goal_seg = Objects[Escort_goal_index].segnum;
+				goal_seg = assign_goal_object_exists_in_mine(objp->segnum, OBJ_ROBOT, boss_id, -1);
 				break;
 			}
 			default:

@@ -1087,7 +1087,10 @@ void DropCurrentWeapon ()
 	objnum_t objnum;
 
 	if (num_objects >= MAX_USED_OBJECTS)
+	{
+		HUD_init_message(HM_DEFAULT, "Too many objects in play, try to drop primary later (count=%u).", static_cast<unsigned>(num_objects));
 		return;
+	}
 
 	if (Primary_weapon==0)
 	{
@@ -1145,7 +1148,10 @@ void DropSecondaryWeapon ()
 	ushort sub_ammo=0;
 
 	if (num_objects >= MAX_USED_OBJECTS)
+	{
+		HUD_init_message(HM_DEFAULT, "Too many objects in play, try to drop secondary later (count=%u).", static_cast<unsigned>(num_objects));
 		return;
+	}
 
 	if (Players[Player_num].secondary_ammo[Secondary_weapon] ==0)
 	{

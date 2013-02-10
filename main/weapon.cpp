@@ -40,8 +40,8 @@ COPYRIGHT 1993-1999 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "physfsx.h"
 #include "gamemine.h"
 
-int POrderList (int num);
-int SOrderList (int num);
+static int POrderList (int num);
+static int SOrderList (int num);
 //	Note, only Vulcan cannon requires ammo.
 // NOTE: Now Vulcan and Gauss require ammo. -5/3/95 Yuan
 //ubyte	Default_primary_ammo_level[MAX_PRIMARY_WEAPONS] = {255, 0, 255, 255, 255};
@@ -630,7 +630,7 @@ void ReorderSecondary ()
 		PlayerCfg.SecondaryOrder[i]=m[i].value;
 }
 
-int POrderList (int num)
+static int POrderList (int num)
 {
 	int i;
 
@@ -642,7 +642,7 @@ int POrderList (int num)
 	Error ("Primary Weapon is not in order list!!!");
 }
 
-int SOrderList (int num)
+static int SOrderList (int num)
 {
 	int i;
 

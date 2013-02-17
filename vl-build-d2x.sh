@@ -29,8 +29,9 @@ printf -v flagsum "$( { printf '%s=%s\n' \
 	| sha1sum)"
 
 if git rev-parse --git-dir >/dev/null 2>&1; then
+	description=$(git describe --tags 2>/dev/null)
 	printf -v mysconsargs[${#mysconsargs[@]}] 'extra_version=%s%s%s' \
-		"$(git describe --tags 2>/dev/null)" \
+		"${description/-d2x}" \
 		"$(git diff --name-status --quiet --exit-code --cached || echo '+')" \
 		"$(git diff --name-status --quiet --exit-code || echo '*')"
 	printf -v mysconsargs[${#mysconsargs[@]}] 'extra_version_build_time=%u' \

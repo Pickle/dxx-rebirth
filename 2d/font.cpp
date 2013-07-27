@@ -57,10 +57,10 @@ openfont open_font[MAX_OPEN_FONTS];
 
 #define BITS_TO_BYTES(x)    (((x)+7)>>3)
 
-int gr_internal_string_clipped(int x, int y, const char *s );
-int gr_internal_string_clipped_m(int x, int y, const char *s );
+static int gr_internal_string_clipped(int x, int y, const char *s );
+static int gr_internal_string_clipped_m(int x, int y, const char *s );
 
-static ubyte *find_kern_entry(grs_font *font,ubyte first,ubyte second)
+static ubyte *find_kern_entry(const grs_font *font,ubyte first,ubyte second)
 {
 	ubyte *p=font->ft_kerndata;
 
@@ -442,7 +442,7 @@ grs_bitmap char_bm = {
 				0			//unused
 };
 
-int gr_internal_color_string(int x, int y, const char *s )
+static int gr_internal_color_string(int x, int y, const char *s )
 {
 	unsigned char * fp;
 	const char *text_ptr, *next_row, *text_ptr1;
@@ -1195,7 +1195,7 @@ void gr_set_fontcolor( int fg_color, int bg_color )
 	grd_curcanv->cv_font_bg_color    = bg_color;
 }
 
-int gr_internal_string_clipped(int x, int y, const char *s )
+static int gr_internal_string_clipped(int x, int y, const char *s )
 {
 	unsigned char * fp;
 	const char * text_ptr, * next_row, * text_ptr1;
@@ -1296,7 +1296,7 @@ int gr_internal_string_clipped(int x, int y, const char *s )
 	return 0;
 }
 
-int gr_internal_string_clipped_m(int x, int y, const char *s )
+static int gr_internal_string_clipped_m(int x, int y, const char *s )
 {
 	unsigned char * fp;
 	const char * text_ptr, * next_row, * text_ptr1;

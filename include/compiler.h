@@ -9,6 +9,9 @@
 #define __attribute_used __attribute__((used))
 #define __attribute_unused __attribute__((unused))
 #define __pack__ __attribute__((packed))
+#ifdef WIN32
+# pragma pack(1)
+#endif
 /*
  * The unaligned forms violate strict aliasing, which triggers a warning
  * in gcc 4.7 and above.

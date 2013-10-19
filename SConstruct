@@ -319,6 +319,8 @@ if os.environ.has_key('CC'):
 	env['CC'] = os.environ['CC']
 if os.environ.has_key('CFLAGS'):
 	env['CFLAGS'] += SCons.Util.CLVar(os.environ['CFLAGS'])
+if os.environ.has_key('CPPFLAGS'):
+	env['CPPFLAGS'] += SCons.Util.CLVar(os.environ['CPPFLAGS'])
 if os.environ.has_key('CXX'):
 	env['CXX'] = os.environ['CXX']
 if os.environ.has_key('CXXFLAGS'):

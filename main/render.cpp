@@ -2173,7 +2173,6 @@ void renderer_t::render_mine(segnum_t start_seg_num,fix eye_offset, int window_n
 #ifndef OGL
 	for (nn=N_render_segs;nn--;) {
 		segnum_t segnum;
-		int objnp;
 
 		// Interpolation_method = 0;
 		segnum = Render_list[nn];

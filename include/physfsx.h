@@ -227,7 +227,8 @@ static inline PHYSFSX_UNSAFE_TRUNCATE_TO_32BIT_INT PHYSFSX_printf(PHYSFS_file *f
 	va_list args;
 
 	va_start(args, format);
-#ifdef _WIN32
+#if defined(_WIN32) && defined(_MSC_VER)
+	/* MinGW does not define StringCbVPrintfA */
 	StringCbVPrintfA(buffer, sizeof(buffer), format, args);
 #else
 	vsnprintf(buffer, sizeof(buffer), format, args);

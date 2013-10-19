@@ -66,7 +66,10 @@ ubyte g3_rotate_point(g3s_point *dest,const vms_vector *src)
 
 //checks for overflow & divides if ok, fillig in r
 //returns true if div is ok, else false
-static int checkmuldiv(fix *r,fix a,fix b,fix c)
+#ifdef OGL
+static
+#endif
+int checkmuldiv(fix *r,fix a,fix b,fix c)
 {
 	quadint q,qt;
 

@@ -216,6 +216,10 @@ void g3_set_special_render(tmap_drawer_type tmap_drawer,flat_drawer_type flat_dr
 extern grs_point blob_vertices[4];
 extern void (*tmap_drawer_ptr)(grs_bitmap *bm,int nv,g3s_point **vertlist);
 
+#ifndef OGL
+int checkmuldiv(fix *r,fix a,fix b,fix c);
+#endif
+
 #endif
 
 #endif

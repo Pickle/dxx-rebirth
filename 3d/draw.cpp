@@ -298,10 +298,6 @@ bool g3_draw_tmap(int nv,g3s_point **pointlist,g3s_uvl *uvl_list,g3s_lrgb *light
 }
 #endif
 
-#ifndef __powerc
-int checkmuldiv(fix *r,fix a,fix b,fix c);
-#endif
-
 #ifndef OGL
 //draw a sortof sphere - i.e., the 2d radius is proportional to the 3d
 //radius, but not to the distance from the eye

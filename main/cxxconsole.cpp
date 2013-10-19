@@ -769,6 +769,9 @@ void cxx_con_add_buffer_line(const char *)
 
 void cxx_con_interactive_print(int *const py)
 {
+#ifdef _WIN32
+	(void)py;
+#else
 	const unsigned history_pos = g_con_history_pos;
 	char buffer[512];
 	if (g_con_history_browse)
@@ -803,4 +806,5 @@ void cxx_con_interactive_print(int *const py)
 	gr_get_string_size(buffer, &w, &h, &aw);
 	y-=h+FSPACY(1);
 	gr_string(x, y, buffer);
+#endif
 }

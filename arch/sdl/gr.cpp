@@ -19,6 +19,7 @@
 #include "gamefont.h"
 #include "args.h"
 #include "config.h"
+#include "palette.h"
 
 static int sdl_video_flags = SDL_SWSURFACE | SDL_HWPALETTE | SDL_DOUBLEBUF;
 static SDL_Surface *screen,*canvas;
@@ -230,7 +231,7 @@ static int last_r=0, last_g=0, last_b=0;
 void gr_palette_step_up( int r, int g, int b )
 {
 	int i;
-	ubyte *p = gr_palette;
+	palette_array_t& p = gr_palette;
 	int temp;
 	SDL_Palette *palette;
 	SDL_Color colors[256];
@@ -249,7 +250,7 @@ void gr_palette_step_up( int r, int g, int b )
 
 	for (i=0; i<256; i++)
 	{
-		temp = (int)(*p++) + r + gr_palette_gamma;
+		temp = (int)p[i].r + r + gr_palette_gamma;
 
 		if (temp<0)
 			temp=0;
@@ -257,7 +258,7 @@ void gr_palette_step_up( int r, int g, int b )
 			temp=63;
 
 		colors[i].r = temp * 4;
-		temp = (int)(*p++) + g + gr_palette_gamma;
+		temp = (int)p[i].g + g + gr_palette_gamma;
 
 		if (temp<0)
 			temp=0;
@@ -265,7 +266,7 @@ void gr_palette_step_up( int r, int g, int b )
 			temp=63;
 
 		colors[i].g = temp * 4;
-		temp = (int)(*p++) + b + gr_palette_gamma;
+		temp = (int)p[i].b + b + gr_palette_gamma;
 
 		if (temp<0)
 			temp=0;
@@ -327,20 +328,20 @@ void gr_palette_load( palette_array_t &pal )
 	gr_remap_mono_fonts();
 }
 
-void gr_palette_read(ubyte * pal)
+void gr_palette_read(palette_array_t &pal)
 {
 	SDL_Palette *palette;
-	int i, j;
+	unsigned i;
 
 	palette = canvas->format->palette;
 
 	if (palette == NULL)
 		return; // Display is not palettised
 
-	for (i = 0, j=0; i < 256; i++)
+	for (i = 0; i < 256; i++)
 	{
-		pal[j++] = palette->colors[i].r / 4;
-		pal[j++] = palette->colors[i].g / 4;
-		pal[j++] = palette->colors[i].b / 4;
+		pal[i].r = palette->colors[i].r / 4;
+		pal[i].g = palette->colors[i].g / 4;
+		pal[i].b = palette->colors[i].b / 4;
 	}
 }

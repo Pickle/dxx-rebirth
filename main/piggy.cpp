@@ -182,9 +182,9 @@ static void DiskBitmapHeader_d1_read(DiskBitmapHeader *dbh, PHYSFS_file *fp)
 	dbh->offset = PHYSFSX_readInt(fp);
 }
 
+#ifdef EDITOR
 static int piggy_is_substitutable_bitmap( char * name, char * subst_name );
 
-#ifdef EDITOR
 static void piggy_write_pigfile(const char *filename);
 static void write_int(int i,PHYSFS_file *file);
 #endif
@@ -1398,6 +1398,7 @@ void piggy_close()
 	free_d1_tmap_nums();
 }
 
+#ifdef EDITOR
 static int piggy_does_bitmap_exist_slow( char * name )
 {
 	int i;
@@ -1463,6 +1464,7 @@ static int piggy_is_substitutable_bitmap( char * name, char * subst_name )
 	strcpy( subst_name, name );
 	return 0;
 }
+#endif
 
 
 

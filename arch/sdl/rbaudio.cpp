@@ -159,7 +159,7 @@ void RBASetVolume(int volume)
 		return;
 	}
 #else
-	volume;
+	(void)volume;
 #endif
 }
 

@@ -107,6 +107,7 @@ using std::min;
 
 int	Debug_spew;
 
+#ifndef RELEASE
 //	Toggle_var points at a variable which gets !ed on del-T press.
 static int	Dummy_var;
 static int	*Toggle_var = &Dummy_var;
@@ -114,11 +115,7 @@ static int	*Toggle_var = &Dummy_var;
 //	External Variables ---------------------------------------------------------
 
 
-#ifndef NDEBUG
-#endif
 
-
-#ifndef RELEASE
 void do_cheat_menu(void);
 #endif
 

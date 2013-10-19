@@ -1310,7 +1310,7 @@ void *dll_GetSymbol(void *dllhandle,const char *symname)
 
 void OpenGL_SetFuncsToNull(void);
 
-extern char *OglLibPath;
+extern const char OglLibPath[];
 
 // pass true to load the library
 // pass false to unload it

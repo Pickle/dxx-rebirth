@@ -412,7 +412,7 @@ int gr_set_mode(u_int32_t mode)
 #define GLstrcmptestr(a,b) if (stricmp(a,#b)==0 || stricmp(a,"GL_" #b)==0)return GL_ ## b;
 
 #ifdef _WIN32
-char *OglLibPath="opengl32.dll";
+const char OglLibPath[]="opengl32.dll";
 
 int ogl_rt_loaded=0;
 int ogl_init_load_library(void)

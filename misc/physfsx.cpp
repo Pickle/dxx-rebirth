@@ -33,7 +33,6 @@ static void PHYSFSX_deinit()
 // The user directory is searched first.
 void PHYSFSX_init(int argc, char *argv[])
 {
-	char fullPath[PATH_MAX + 5];
 #if defined(__unix__)
 	const char *path = NULL;
 #endif
@@ -68,6 +67,7 @@ void PHYSFSX_init(int argc, char *argv[])
 #endif
 	
 #if defined(__unix__)
+	char fullPath[PATH_MAX + 5];
 # if !(defined(__APPLE__) && defined(__MACH__))
 	path = "~/.d2x-rebirth/";
 # else

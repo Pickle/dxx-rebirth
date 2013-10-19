@@ -631,7 +631,7 @@ static int manual_join_game_handler(newmenu *menu, d_event *event, direct_join *
 #if IPv6
 					((af = dj->host_addr.sin6_family) != AF_INET && dj->host_addr.sin6_family != AF_INET6)
 #else
-					((af = dj->host_addr.sin_family) != AF_INET))
+					((af = dj->host_addr.sin_family) != AF_INET)
 #endif
 					)
 				{

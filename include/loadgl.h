@@ -1239,6 +1239,9 @@ DEFVAR wglSwapMultipleBuffers_fp dwglSwapMultipleBuffers;
 #endif
 
 #ifdef DECLARE_VARS
+void *dll_LoadModule(const char *name);
+void dll_UnloadModule(void *hdl);
+void *dll_GetSymbol(void *dllhandle,const char *symname);
 
 // Dynamic module load functions
 #ifdef _WIN32
@@ -1309,11 +1312,10 @@ void OpenGL_SetFuncsToNull(void);
 
 extern char *OglLibPath;
 
-#ifndef DECLARE_VARS
 // pass true to load the library
 // pass false to unload it
 bool OpenGL_LoadLibrary(bool load);//load=true removed because not c++
-#else
+#ifdef DECLARE_VARS
 void *OpenGLModuleHandle=NULL;
 //char *OglLibPath="opengl32.dll";
 bool OpenGL_LoadLibrary(bool load)

@@ -438,8 +438,11 @@ grs_bitmap char_bm = {
 #ifdef BITMAP_SELECTOR
 				0,			//selector
 #endif
+				0,
 				0,			//avg_color
+				{0, 0, 0},
 				0			//unused
+				,NULL
 };
 
 static int gr_internal_color_string(int x, int y, const char *s )

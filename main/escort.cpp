@@ -1806,7 +1806,9 @@ void do_escort_menu(void)
 			goal_txt = goal_str;
 			snprintf(goal_str, sizeof(goal_str), "marker %i", next_goal-ESCORT_GOAL_MARKER1+1);
 			break;
-
+		default:
+			menu->msg[0] = 0;
+			return;
 	}
 
 	if (!Buddy_messages_suppressed)

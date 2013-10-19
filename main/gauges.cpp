@@ -696,6 +696,7 @@ static inline void hud_bitblt_free (int x, int y, int w, int h, grs_bitmap *bm)
 #ifdef OGL
 	ogl_ubitmapm_cs (x,y,w,h,bm,-1,F1_0);
 #else
+	(void)w;(void)h;
 	gr_ubitmapm(x, y, bm);
 #endif
 }

@@ -37,9 +37,9 @@ static inline void py_load_level_hit() {}
 static inline void py_notify_read_player_file() {}
 static inline void py_notify_create_player_appearance_effect(dxxobject *) {}
 static inline void py_notify_player_join(unsigned) {}
-static inline void py_notify_player_death_reactor(unsigned, objnum_t) {}
-static inline void py_notify_player_death_mine(unsigned, objnum_t) {}
-static inline void py_notify_player_death_robot(unsigned, objnum_t) {}
+static inline void py_notify_player_death_reactor(unsigned, const objnum_t&) {}
+static inline void py_notify_player_death_mine(unsigned, const objnum_t&) {}
+static inline void py_notify_player_death_robot(unsigned, const objnum_t&) {}
 static inline void py_notify_player_death_player(unsigned, unsigned) {}
 static inline void py_notify_player_ship_destroyed() {}
 static inline void py_notify_start_endlevel_sequence() {}

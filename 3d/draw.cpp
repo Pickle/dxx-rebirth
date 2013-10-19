@@ -152,6 +152,50 @@ bool g3_check_and_draw_tmap(int nv,g3s_point **pointlist,g3s_uvl *uvl_list,g3s_l
 }
 
 #ifndef OGL
+//deal with face that must be clipped
+static bool must_clip_flat_face(int nv,g3s_codes cc)
+{
+	int i;
+        bool ret=0;
+	g3s_point **bufptr;
+
+	bufptr = clip_polygon(Vbuf0,Vbuf1,&nv,&cc);
+
+	if (nv>0 && !(cc.uor&CC_BEHIND) && !cc.uand) {
+
+		for (i=0;i<nv;i++) {
+			g3s_point *p = bufptr[i];
+	
+			if (!(p->p3_flags&PF_PROJECTED))
+				g3_project_point(p);
+	
+			if (p->p3_flags&PF_OVERFLOW) {
+				ret = 1;
+				goto free_points;
+			}
+
+			Vertex_list[i*2]   = p->p3_sx;
+			Vertex_list[i*2+1] = p->p3_sy;
+		}
+	
+		(*flat_drawer_ptr)(nv,(int *)Vertex_list);
+	}
+	else 
+		ret=1;
+
+	//free temp points
+free_points:
+	;
+
+	for (i=0;i<nv;i++)
+		if (Vbuf1[i]->p3_flags & PF_TEMP_POINT)
+			free_temp_point(Vbuf1[i]);
+
+//	Assert(free_point_num==0);
+
+	return ret;
+}
+
 //draw a flat-shaded face.
 //returns 1 if off screen, 0 if drew
 bool g3_draw_poly(int nv,g3s_point **pointlist)

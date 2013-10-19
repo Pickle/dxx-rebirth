@@ -353,7 +353,7 @@ static int MovieHandler(window *wind, d_event *event, movie *m)
 }
 
 //returns status.  see movie.h
-static int RunMovie(char *filename, int , int must_have,int dx,int dy)
+static int RunMovie(char *filename, int hires_flag, int must_have,int dx,int dy)
 {
 	window *wind;
 	movie *m;
@@ -404,6 +404,7 @@ static int RunMovie(char *filename, int , int must_have,int dx,int dy)
 	MVE_ioCallbacks(FileRead);
 
 #ifdef OGL
+	(void)hires_flag;
 	set_screen_mode(SCREEN_MOVIE);
 	gr_copy_palette(pal_save, gr_palette);
 	gr_palette_load(gr_palette);

@@ -462,7 +462,6 @@ void move_player_2_segment(segment *seg,int side)
 #ifndef OGL
 void save_screen_shot(int automap_flag)
 {
-	char message[100];
 	grs_canvas *screen_canv=&grd_curscreen->sc_canvas;
 	static int savenum=0;
 	grs_canvas *temp_canv,*save_canv;
@@ -485,12 +484,11 @@ void save_screen_shot(int automap_flag)
 	{
 		sprintf(savename, "%sscrn%04d.pcx",SCRNS_DIR, savenum++);
 	} while (PHYSFSX_exists(savename,0));
-	sprintf( message, "%s 'scrn%04d.pcx'", TXT_DUMPING_SCREEN, savenum-1 );
 
 	gr_set_current_canvas(NULL);
 
 	if (!automap_flag)
-		HUD_init_message(HM_DEFAULT, message);
+		HUD_init_message(HM_DEFAULT, "%s 'scrn%04d.pcx'", TXT_DUMPING_SCREEN, savenum-1 );
 
 	gr_palette_read(pal);		//get actual palette from the hardware
 	pcx_write_bitmap(savename,&temp_canv->cv_bitmap,pal);

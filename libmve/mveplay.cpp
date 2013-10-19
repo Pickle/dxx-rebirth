@@ -128,8 +128,9 @@ struct timespec
 #endif
 
 #if defined(_WIN32) || defined(macintosh)
-int gettimeofday(struct timeval *tv, void *tz)
+static int gettimeofday(struct timeval *tv, void *tz)
 {
+	(void)tz;
 	static int counter = 0;
 #ifdef _WIN32
 	DWORD now = GetTickCount();

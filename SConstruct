@@ -340,7 +340,8 @@ if target_platform == 'win32':
 	common_sources += ['arch/win32/messagebox.cpp']
 	ogllibs = ''
 	libs += ['glu32', 'wsock32', 'ws2_32', 'winmm', 'mingw32', 'SDLmain', 'SDL']
-	lflags = '-mwindows  arch/win32/d2xr.res'
+	lflags = os.environ["LDFLAGS"] if os.environ.has_key('LDFLAGS') else ''
+	lflags += ' -mwindows arch/win32/d2xr.res'
 elif target_platform == 'darwin':
 	print "compiling on Mac OS X"
 	osdef = '__APPLE__'

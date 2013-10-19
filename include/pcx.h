@@ -42,7 +42,7 @@ int pcx_read_bitmap(const char * filename, grs_bitmap * bmp,int bitmap_type ,pal
 
 // Writes the bitmap bmp to filename, using palette. Returns error code.
 
-extern int pcx_write_bitmap(const char * filename, grs_bitmap * bmp, ubyte * palette );
+int pcx_write_bitmap(const char * filename, grs_bitmap * bmp, const palette_array_t& palette );
 
 extern const char *pcx_errormsg(int error_number);
 

@@ -83,6 +83,14 @@ static void net_udp_send_extras ();
 static void net_udp_broadcast_game_info(ubyte info_upid);
 static int net_udp_more_options_handler( newmenu *menu, d_event *event, void *userdata );
 static int net_udp_start_game(void);
+static void net_udp_process_game_info(ubyte *data, int data_len, struct _sockaddr game_addr, int lite_info);
+
+int udp_tracker_init();
+int udp_tracker_unregister();
+int udp_tracker_register();
+int udp_tracker_reqgames();
+int udp_tracker_process_game(ubyte*, int);
+
 
 // Variables
 int UDP_num_sendto = 0, UDP_len_sendto = 0, UDP_num_recvfrom = 0, UDP_len_recvfrom = 0;

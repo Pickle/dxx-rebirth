@@ -9,21 +9,12 @@
 #include <windows.h>
 #include <stddef.h>
 #endif
-#if defined(__APPLE__) && defined(__MACH__)
-#include <OpenGL/gl.h>
-#include <OpenGL/glu.h>
-#else
-#ifdef OGLES
-#include <GLES/gl.h>
-#else
-#include <GL/gl.h>
-#include <GL/glu.h>
-#endif
-#endif
+
 #include <string.h>
 #include <math.h>
 #include <stdio.h>
 
+#include "ogl_init.h"
 #include "3d.h"
 #include "piggy.h"
 #include "common/3d/globvars.h"
@@ -52,6 +43,9 @@
 #include "gauges.h"
 #include "playsave.h"
 #include "args.h"
+#if defined(OGL1) || defined(OGL2) 
+#include "ogl.h"
+#endif
 
 #include <algorithm>
 using std::max;
@@ -72,13 +66,14 @@ using std::max;
 #define sinf(a) sin(a)
 #endif
 
+#define f2glf(x) (f2fl(x))
+
 static GLubyte *pixels = NULL;
 static GLubyte *texbuf = NULL;
 
 static unsigned char *ogl_pal=gr_palette;
 
 unsigned last_width=~0u,last_height=~0u;
-int GL_TEXTURE_2D_enabled=-1;
 GLfloat ogl_maxanisotropy = 0;
 
 static int r_texcount = 0, r_cachedtexcount = 0;
@@ -93,45 +88,26 @@ static GLfloat *sphere_va = NULL, *circle_va = NULL, *disk_va = NULL;
 static GLfloat *secondary_lva[3]={NULL, NULL, NULL};
 static int r_polyc,r_tpolyc,r_bitmapc,r_ubitbltc;
 int r_upixelc;
-#define f2glf(x) (f2fl(x))
-
-#define OGL_BINDTEXTURE(a) glBindTexture(GL_TEXTURE_2D, a);
-
 
 static ogl_texture ogl_texture_list[OGL_TEXTURE_LIST_SIZE];
 static int ogl_texture_list_cur;
 
 /* some function prototypes */
 
-#define GL_TEXTURE0_ARB 0x84C0
 static int ogl_loadtexture(unsigned char *data, int dxo, int dyo, ogl_texture *tex, int bm_flags, int data_format, int texfilt);
 static void ogl_freetexture(ogl_texture *gltexture);
+
+void ogl_texture_stats(void);
+void ogl_cache_vclip_textures(vclip*);
+void ogl_cache_vclipn_textures(int);
+void ogl_cache_weapon_textures(int);
+
+int8_t check_opengl_errors( const string& file, uint16_t line );
 
 static void ogl_loadbmtexture(grs_bitmap *bm)
 {
 	ogl_loadbmtexture_f(bm, GameCfg.TexFilt);
 }
-
-#ifdef OGLES
-// Replacement for gluPerspective
-static void perspective(double fovy, double aspect, double zNear, double zFar)
-{
-	double xmin, xmax, ymin, ymax;
-
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-
-	ymax = zNear * tan(fovy * M_PI / 360.0);
-	ymin = -ymax;
-	xmin = ymin * aspect;
-	xmax = ymax * aspect;
-
-	glFrustumf(xmin, xmax, ymin, ymax, zNear, zFar);
-	glMatrixMode(GL_MODELVIEW);
-	glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);	
-	glDepthMask(GL_TRUE);
-}
-#endif
 
 static void ogl_init_texture_stats(ogl_texture* t){
 	t->prio=0.3;//default prio
@@ -261,7 +237,7 @@ ogl_texture* ogl_get_free_texture(void){
 	Error("OGL: texture list full!\n");
 }
 
-static void ogl_texture_stats(void)
+void ogl_texture_stats(void)
 {
 	int used = 0, usedother = 0, usedidx = 0, usedrgb = 0, usedrgba = 0;
 	int databytes = 0, truebytes = 0, datatexel = 0, truetexel = 0, i;
@@ -320,22 +296,10 @@ static void ogl_texture_stats(void)
 	gr_printf(FSPACX(2), FSPACY(1)+(LINE_SPACING*3), "total=%iK", (colorsize + depthsize + truebytes) / 1024);
 }
 
-static void ogl_bindbmtex(grs_bitmap *bm){
+static void ogl_checkbmtex(grs_bitmap *bm){
 	if (bm->gltexture==NULL || bm->gltexture->handle<=0)
 		ogl_loadbmtexture(bm);
-	OGL_BINDTEXTURE(bm->gltexture->handle);
 	bm->gltexture->numrend++;
-}
-
-//gltexture MUST be bound first
-static void ogl_texwrap(ogl_texture *gltexture,int state)
-{
-	if (gltexture->wrapstate != state || gltexture->numrend < 1)
-	{
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, state);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, state);
-		gltexture->wrapstate = state;
-	}
 }
 
 //crude texture precaching
@@ -357,7 +321,7 @@ void ogl_cache_polymodel_textures(int model_num)
 	}
 }
 
-static void ogl_cache_vclip_textures(vclip *vc){
+void ogl_cache_vclip_textures(vclip *vc){
 	int i;
 	for (i=0;i<vc->num_frames;i++){
 		PIGGY_PAGE_IN(vc->frames[i]);
@@ -365,13 +329,13 @@ static void ogl_cache_vclip_textures(vclip *vc){
 	}
 }
 
-static void ogl_cache_vclipn_textures(int i)
+void ogl_cache_vclipn_textures(int i)
 {
 	if (i >= 0 && i < VCLIP_MAXNUM)
 		ogl_cache_vclip_textures(&Vclip[i]);
 }
 
-static void ogl_cache_weapon_textures(int weapon_type)
+void ogl_cache_weapon_textures(int weapon_type)
 {
 	weapon_info *w;
 
@@ -398,9 +362,9 @@ void ogl_cache_level_textures(void)
 	grs_bitmap *bm,*bm2;
 	struct side *sidep;
 	int max_efx=0,ef;
-	
+
 	ogl_reset_texture_stats_internal();//loading a new lev should reset textures
-	
+
 	for (i=0,ec=Effects;i<Num_effects;i++,ec++) {
 		ogl_cache_vclipn_textures(Effects[i].dest_vclip);
 		if ((Effects[i].changing_wall_texture == -1) && (Effects[i].changing_object_texture==-1) )
@@ -458,7 +422,7 @@ void ogl_cache_level_textures(void)
 		for (i=0;i<=Highest_object_index;i++){
 			if(Objects[i].render_type==RT_POWERUP){
 				ogl_cache_vclipn_textures(Objects[i].rtype.vclip_info.vclip_num);
-				switch (get_powerup_id(&Objects[i])){
+				switch (Objects[i].id){
 					case POW_VULCAN_WEAPON:
 						ogl_cache_weapon_textures(Primary_weapon_to_weapon_info[VULCAN_INDEX]);
 						break;
@@ -489,9 +453,9 @@ void ogl_cache_level_textures(void)
 			else if(Objects[i].render_type==RT_POLYOBJ){
 				if (Objects[i].type == OBJ_ROBOT)
 				{
-					ogl_cache_vclipn_textures(Robot_info[get_robot_id(&Objects[i])].exp1_vclip_num);
-					ogl_cache_vclipn_textures(Robot_info[get_robot_id(&Objects[i])].exp2_vclip_num);
-					ogl_cache_weapon_textures(Robot_info[get_robot_id(&Objects[i])].weapon_type);
+					ogl_cache_vclipn_textures(Robot_info[Objects[i].id].exp1_vclip_num);
+					ogl_cache_vclipn_textures(Robot_info[Objects[i].id].exp2_vclip_num);
+					ogl_cache_weapon_textures(Robot_info[Objects[i].id].weapon_type);
 				}
 				if (Objects[i].rtype.pobj_info.tmap_override != -1)
 					ogl_loadbmtexture(&GameBitmaps[Textures[Objects[i].rtype.pobj_info.tmap_override].index]);
@@ -506,55 +470,43 @@ void ogl_cache_level_textures(void)
 
 bool g3_draw_line(g3s_point *p0,g3s_point *p1)
 {
-	int c;
-	GLfloat color_r, color_g, color_b;
-	GLfloat color_array[] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
-	GLfloat vertex_array[] = {
-		static_cast<GLfloat>(f2glf(p0->p3_vec.x)), static_cast<GLfloat>(f2glf(p0->p3_vec.y)), static_cast<GLfloat>(-f2glf(p0->p3_vec.z)),
-		static_cast<GLfloat>(f2glf(p1->p3_vec.x)), static_cast<GLfloat>(f2glf(p1->p3_vec.y)), static_cast<GLfloat>(-f2glf(p1->p3_vec.z))
-	};
-  
-	c=grd_curcanv->cv_color;
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glEnableClientState(GL_COLOR_ARRAY);
-	OGL_DISABLE(TEXTURE_2D);
-	color_r = PAL2Tr(c);
-	color_g = PAL2Tg(c);
-	color_b = PAL2Tb(c);
-	color_array[0] = color_array[4] = color_r;
-	color_array[1] = color_array[5] = color_g;
-	color_array[2] = color_array[6] = color_b;
-	color_array[3] = color_array[7] = 1.0;
-	glVertexPointer(3, GL_FLOAT, 0, vertex_array);
-	glColorPointer(4, GL_FLOAT, 0, color_array);
-	glDrawArrays(GL_LINES, 0, 2);
-	glDisableClientState(GL_VERTEX_ARRAY);
-	glDisableClientState(GL_COLOR_ARRAY);
+	vec3f_t v[2];
+
+	v[0][0] =  f2glf(p0->p3_vec.x);
+	v[0][1] =  f2glf(p0->p3_vec.y);
+	v[0][2] = -f2glf(p0->p3_vec.z);
+	v[1][0] =  f2glf(p1->p3_vec.x);
+	v[1][1] =  f2glf(p1->p3_vec.y);
+	v[1][2] = -f2glf(p1->p3_vec.z);
+
+	GLState.color4f[0] = PAL2Tr(grd_curcanv->cv_color);
+	GLState.color4f[1] = PAL2Tg(grd_curcanv->cv_color);
+	GLState.color4f[2] = PAL2Tb(grd_curcanv->cv_color);
+	GLState.color4f[3] = 1.0;
+	
+	GLState.mode = GL_LINES;
+	GLState.view = POSITION_XYZ;
+	GLState.count = 2;
+	GLState.stride = 0;
+	GLState.v_pos = &v[0][0];
+
+	ogl_draw_arrays( GLState );
 
 	return 1;
-}
-
-static void ogl_drawcircle(int nsides, int type, GLfloat *vertex_array)
-{
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glVertexPointer(2, GL_FLOAT, 0, vertex_array);
-	glDrawArrays(type, 0, nsides);
-	glDisableClientState(GL_VERTEX_ARRAY);
 }
 
 static GLfloat *circle_array_init(int nsides)
 {
 	int i;
 	float ang;
-	GLfloat *vertex_array;
-	MALLOC(vertex_array, GLfloat, nsides * 2);
-	
+	GLfloat *vertex_array = (GLfloat *) d_malloc(sizeof(GLfloat) * nsides * 2);
+
 	for(i = 0; i < nsides; i++) {
 		ang = 2.0 * M_PI * i / nsides;
 		vertex_array[i * 2] = cosf(ang);
         	vertex_array[i * 2 + 1] = sinf(ang);
 	}
-	
+
 	return vertex_array;
 }
 
@@ -562,22 +514,25 @@ static GLfloat *circle_array_init_2(int nsides, float xsc, float xo, float ysc, 
 {
  	int i;
  	float ang;
-	GLfloat *vertex_array;
-	MALLOC(vertex_array, GLfloat, nsides * 2);
-	
+	GLfloat *vertex_array = (GLfloat *) d_malloc(sizeof(GLfloat) * nsides * 2);
+
 	for(i = 0; i < nsides; i++) {
 		ang = 2.0 * M_PI * i / nsides;
 		vertex_array[i * 2] = cosf(ang) * xsc + xo;
 		vertex_array[i * 2 + 1] = sinf(ang) * ysc + yo;
 	}
-	
+
 	return vertex_array;
 }
 
 void ogl_draw_vertex_reticle(int cross,int primary,int secondary,int color,int alpha,int size_offs)
 {
+	GLfloat *vtx_pos; 
+	GLubyte *vtx_clr;
+
 	int size=270+(size_offs*20), i;
-	float scale = ((float)SWIDTH/SHEIGHT), ret_rgba[4], ret_dark_rgba[4];
+	float scale = ((float)SWIDTH/SHEIGHT);
+	GLubyte ret_rgba[4], ret_dark_rgba[4];
 	GLfloat cross_lva[8 * 2] = {
 		-4.0, 2.0, -2.0, 0, -3.0, -4.0, -2.0, -3.0, 4.0, 2.0, 2.0, 0, 3.0, -4.0, 2.0, -3.0,
 	};
@@ -587,36 +542,36 @@ void ogl_draw_vertex_reticle(int cross,int primary,int secondary,int color,int a
 		{ 5.5, -5.0, 6.5, -7.5, 10.0, -7.0, 10.0, -8.7 },
 		{ 10.0, -7.0, 10.0, -8.7, 15.0, -8.5, 15.0, -9.5 }
 	};
-	GLfloat dark_lca[16 * 4] = {
-		0.125, 0.54, 0.125, 0.6, 0.125, 0.54, 0.125, 0.6, 0.125, 0.54, 0.125, 0.6, 0.125, 0.54, 0.125, 0.6,
-		0.125, 0.54, 0.125, 0.6, 0.125, 0.54, 0.125, 0.6, 0.125, 0.54, 0.125, 0.6, 0.125, 0.54, 0.125, 0.6,
-		0.125, 0.54, 0.125, 0.6, 0.125, 0.54, 0.125, 0.6, 0.125, 0.54, 0.125, 0.6, 0.125, 0.54, 0.125, 0.6,
-		0.125, 0.54, 0.125, 0.6, 0.125, 0.54, 0.125, 0.6, 0.125, 0.54, 0.125, 0.6, 0.125, 0.54, 0.125, 0.6
+	GLubyte dark_lca[16 * 4] = {
+		32, 138, 32, 153, 32, 138, 32, 153, 32, 138, 32, 153, 32, 138, 32, 153,
+		32, 138, 32, 153, 32, 138, 32, 153, 32, 138, 32, 153, 32, 138, 32, 153,
+		32, 138, 32, 153, 32, 138, 32, 153, 32, 138, 32, 153, 32, 138, 32, 153,
+		32, 138, 32, 153, 32, 138, 32, 153, 32, 138, 32, 153, 32, 138, 32, 153
 	};
-	GLfloat bright_lca[16 * 4] = {
-		0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0,
-		0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0,
-		0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0,
-		0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0
+	GLubyte bright_lca[16 * 4] = {
+		32, 255, 32, 255, 32, 255, 32, 255, 32, 255, 32, 255, 32, 255, 32, 255,
+		32, 255, 32, 255, 32, 255, 32, 255, 32, 255, 32, 255, 32, 255, 32, 255,
+		32, 255, 32, 255, 32, 255, 32, 255, 32, 255, 32, 255, 32, 255, 32, 255,
+		32, 255, 32, 255, 32, 255, 32, 255, 32, 255, 32, 255, 32, 255, 32, 255
 	};
-	GLfloat cross_lca[8 * 4] = {
-		0.125, 0.54, 0.125, 0.6, 0.125, 1.0, 0.125, 1.0,
-		0.125, 0.54, 0.125, 0.6, 0.125, 1.0, 0.125, 1.0,
-		0.125, 0.54, 0.125, 0.6, 0.125, 1.0, 0.125, 1.0,
-		0.125, 0.54, 0.125, 0.6, 0.125, 1.0, 0.125, 1.0
+	GLubyte cross_lca[8 * 4] = {
+		32, 138, 32, 153, 32, 255, 32, 255,
+		32, 138, 32, 153, 32, 255, 32, 255,
+		32, 138, 32, 153, 32, 255, 32, 255,
+		32, 138, 32, 153, 32, 255, 32, 255
 	};
-	GLfloat primary_lca[2][4 * 4] = {
-		{0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 0.54, 0.125, 0.6, 0.125, 0.54, 0.125, 0.6},
-		{0.125, 0.54, 0.125, 0.6, 0.125, 0.54, 0.125, 0.6, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0, 0.125, 1.0}
+	GLubyte primary_lca[2][4 * 4] = {
+		{32, 255, 32, 255, 32, 255, 32, 255, 32, 138, 32, 153, 32, 138, 32, 153},
+		{32, 138, 32, 153, 32, 138, 32, 153, 32, 255, 32, 255, 32, 255, 32, 255}
 	};
 	
-	ret_rgba[0] = PAL2Tr(color);
+	ret_rgba[0] = 255.0f*(PAL2Tr(color));
 	ret_dark_rgba[0] = ret_rgba[0]/2;
-	ret_rgba[1] = PAL2Tg(color);
+	ret_rgba[1] = 255.0f*(PAL2Tg(color));
 	ret_dark_rgba[1] = ret_rgba[1]/2;
-	ret_rgba[2] = PAL2Tb(color);
+	ret_rgba[2] = 255.0f*(PAL2Tb(color));
 	ret_dark_rgba[2] = ret_rgba[2]/2;
-	ret_rgba[3] = 1.0 - ((float)alpha / ((float)GR_FADE_LEVELS));
+	ret_rgba[3] = 255.0f*(1.0 - ((float)alpha / ((float)GR_FADE_LEVELS)));
 	ret_dark_rgba[3] = ret_rgba[3]/2;
 
 	for (i = 0; i < 16*4; i += 4)
@@ -651,151 +606,194 @@ void ogl_draw_vertex_reticle(int cross,int primary,int secondary,int color,int a
 	primary_lca[1][2] = primary_lca[1][6] = primary_lca[0][10] = primary_lca[0][14] = ret_dark_rgba[2];
 	primary_lca[1][3] = primary_lca[1][7] = primary_lca[0][11] = primary_lca[0][15] = ret_dark_rgba[3];
 
-	glPushMatrix();
-	glTranslatef((grd_curcanv->cv_bitmap.bm_w/2+grd_curcanv->cv_bitmap.bm_x)/(float)last_width,1.0-(grd_curcanv->cv_bitmap.bm_h/2+grd_curcanv->cv_bitmap.bm_y)/(float)last_height,0);
+	ModelView.push_back( ModelView.back() );
+	ogl_translate((grd_curcanv->cv_bitmap.bm_w/2+grd_curcanv->cv_bitmap.bm_x)/(float)last_width,1.0-(grd_curcanv->cv_bitmap.bm_h/2+grd_curcanv->cv_bitmap.bm_y)/(float)last_height,0);
 
 	if (scale >= 1)
 	{
 		size/=scale;
-		glScalef(f2glf(size),f2glf(size*scale),f2glf(size));
+		ogl_scale(f2glf(size),f2glf(size*scale),f2glf(size));
 	}
 	else
 	{
 		size*=scale;
-		glScalef(f2glf(size/scale),f2glf(size),f2glf(size));
+		ogl_scale(f2glf(size/scale),f2glf(size),f2glf(size));
 	}
 
 	glLineWidth(linedotscale*2);
-	OGL_DISABLE(TEXTURE_2D);
+	//OGL_DISABLE(TEXTURE_2D);
 	glDisable(GL_CULL_FACE);
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glEnableClientState(GL_COLOR_ARRAY);
-	
+
 	//cross
 	if(cross)
-		glColorPointer(4, GL_FLOAT, 0, cross_lca);
+		vtx_clr = &cross_lca[0];
 	else
-		glColorPointer(4, GL_FLOAT, 0, dark_lca);
-	glVertexPointer(2, GL_FLOAT, 0, cross_lva);
-	glDrawArrays(GL_LINES, 0, 8);
-	
+		vtx_clr = &dark_lca[0];
+	vtx_pos = &cross_lva[0];
+    
+	GLState.mode = GL_LINES;
+	GLState.view = POSITION_XY;
+	GLState.count = 8;
+	GLState.stride = 0;
+	GLState.v_pos = vtx_pos;
+	GLState.v_clr = vtx_clr;
+	ogl_draw_arrays( GLState );
+
 	//left primary bar
 	if(primary == 0)
-		glColorPointer(4, GL_FLOAT, 0, dark_lca);
+		vtx_clr = &dark_lca[0];
 	else
-		glColorPointer(4, GL_FLOAT, 0, primary_lca[0]);
-	glVertexPointer(2, GL_FLOAT, 0, primary_lva[0]);
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+		vtx_clr = &primary_lca[0][0];
+	vtx_pos = &primary_lva[0][0];
+    
+	GLState.mode = GL_TRIANGLE_STRIP;
+	GLState.view = POSITION_XY;
+	GLState.count = 4;
+	GLState.stride = 0;
+	GLState.v_pos = vtx_pos;
+	GLState.v_clr = vtx_clr;
+	ogl_draw_arrays( GLState );
+
 	if(primary != 2)
-		glColorPointer(4, GL_FLOAT, 0, dark_lca);
+		vtx_clr = &dark_lca[0];
 	else
-		glColorPointer(4, GL_FLOAT, 0, primary_lca[1]);
-	glVertexPointer(2, GL_FLOAT, 0, primary_lva[1]);
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+		vtx_clr = &primary_lca[1][0];
+	vtx_pos = &primary_lva[1][0];
+
+	GLState.v_pos = vtx_pos;
+	GLState.v_clr = vtx_clr;
+	ogl_draw_arrays( GLState );
 	//right primary bar
 	if(primary == 0)
-		glColorPointer(4, GL_FLOAT, 0, dark_lca);
+		vtx_clr = &dark_lca[0];
 	else
-		glColorPointer(4, GL_FLOAT, 0, primary_lca[0]);
-	glVertexPointer(2, GL_FLOAT, 0, primary_lva[2]);
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+		vtx_clr = &primary_lca[0][0];
+	vtx_pos = &primary_lva[2][0];
+    
+	GLState.v_pos = vtx_pos;
+	GLState.v_clr = vtx_clr;	
+	ogl_draw_arrays( GLState );
+    
 	if(primary != 2)
-		glColorPointer(4, GL_FLOAT, 0, dark_lca);
+		vtx_clr = &dark_lca[0];
 	else
-		glColorPointer(4, GL_FLOAT, 0, primary_lca[1]);
-	glVertexPointer(2, GL_FLOAT, 0, primary_lva[3]);
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-	
+		vtx_clr = &primary_lca[1][0];
+	vtx_pos = &primary_lva[3][0];
+    
+	GLState.v_pos = vtx_pos;
+	GLState.v_clr = vtx_clr;	
+	ogl_draw_arrays( GLState );
+
 	if (secondary<=2){
 		//left secondary
 		if (secondary != 1)
-			glColorPointer(4, GL_FLOAT, 0, dark_lca);
+			vtx_clr = &dark_lca[0];
 		else
-			glColorPointer(4, GL_FLOAT, 0, bright_lca);
+			vtx_clr = &bright_lca[0];
 		if(!secondary_lva[0])
 			secondary_lva[0] = circle_array_init_2(16, 2.0, -10.0, 2.0, -2.0);
-		ogl_drawcircle(16, GL_LINE_LOOP, secondary_lva[0]);
+		vtx_pos = &secondary_lva[0][0];
 		//right secondary
 		if (secondary != 2)
-			glColorPointer(4, GL_FLOAT, 0, dark_lca);
+			vtx_clr = &dark_lca[0];
 		else
-			glColorPointer(4, GL_FLOAT, 0, bright_lca);
+			vtx_clr = &bright_lca[0];
 		if(!secondary_lva[1])
 			secondary_lva[1] = circle_array_init_2(16, 2.0, 10.0, 2.0, -2.0);
-		ogl_drawcircle(16, GL_LINE_LOOP, secondary_lva[1]);
+		vtx_pos = &secondary_lva[1][0];
 	}
 	else {
 		//bottom/middle secondary
 		if (secondary != 4)
-			glColorPointer(4, GL_FLOAT, 0, dark_lca);
+			vtx_clr = &dark_lca[0];
 		else
-			glColorPointer(4, GL_FLOAT, 0, bright_lca);
+			vtx_clr = &bright_lca[0];
 		if(!secondary_lva[2])
 			secondary_lva[2] = circle_array_init_2(16, 2.0, 0.0, 2.0, -8.0);
-		ogl_drawcircle(16, GL_LINE_LOOP, secondary_lva[2]);
+		vtx_pos = &secondary_lva[2][0];
 	}
+
+	GLState.mode = GL_LINE_LOOP;
+	GLState.view = POSITION_XY;
+	GLState.count = 16;
+	GLState.stride = 0;
+	GLState.v_pos = vtx_pos;
+	GLState.v_clr = vtx_clr;
 	
-	//glDisableClientState(GL_VERTEX_ARRAY);
-	glDisableClientState(GL_COLOR_ARRAY);
-	glPopMatrix();
+	ogl_draw_arrays( GLState );
+
+	ModelView.pop_back();
 	glLineWidth(linedotscale);
 }
 
 /*
  * Stars on heaven in exit sequence, automap objects
  */
-int g3_draw_sphere(g3s_point *pnt,fix rad){
-	int c=grd_curcanv->cv_color, i;
+int g3_draw_sphere(g3s_point *pnt,fix rad)
+{ 
 	float scale = ((float)grd_curcanv->cv_bitmap.bm_w/grd_curcanv->cv_bitmap.bm_h);
-	GLfloat color_array[20*4];
-	
-	for (i = 0; i < 20*4; i += 4)
-	{
-		color_array[i] = CPAL2Tr(c);
-		color_array[i+1] = CPAL2Tg(c);
-		color_array[i+2] = CPAL2Tb(c);
-		color_array[i+3] = 1.0;
-	}
-	OGL_DISABLE(TEXTURE_2D);
+
 	glDisable(GL_CULL_FACE);
-	glPushMatrix();
-	glTranslatef(f2glf(pnt->p3_vec.x),f2glf(pnt->p3_vec.y),-f2glf(pnt->p3_vec.z));
+	ModelView.push_back( ModelView.back() );
+	ogl_translate(f2glf(pnt->p3_vec.x),f2glf(pnt->p3_vec.y),-f2glf(pnt->p3_vec.z));
 	if (scale >= 1)
 	{
 		rad/=scale;
-		glScalef(f2glf(rad),f2glf(rad*scale),f2glf(rad));
+		ogl_scale(f2glf(rad),f2glf(rad*scale),f2glf(rad));
 	}
 	else
 	{
 		rad*=scale;
-		glScalef(f2glf(rad/scale),f2glf(rad),f2glf(rad));
+		ogl_scale(f2glf(rad/scale),f2glf(rad),f2glf(rad));
 	}
 	if(!sphere_va)
 		sphere_va = circle_array_init(20);
-	glEnableClientState(GL_COLOR_ARRAY);
-	glColorPointer(4, GL_FLOAT, 0, color_array);
-	ogl_drawcircle(20, GL_TRIANGLE_FAN, sphere_va);
-	glDisableClientState(GL_COLOR_ARRAY);
-	glPopMatrix();
+
+	GLState.color4f[0] = PAL2Tr(grd_curcanv->cv_color);
+	GLState.color4f[1] = PAL2Tg(grd_curcanv->cv_color);
+	GLState.color4f[2] = PAL2Tb(grd_curcanv->cv_color);
+	GLState.color4f[3] = 1.0;
+	
+	GLState.mode = GL_TRIANGLE_FAN;
+	GLState.view = POSITION_XY;
+	GLState.count = 20;
+	GLState.stride = 0;
+	GLState.v_pos = sphere_va;
+
+	ogl_draw_arrays( GLState );
+
+	ModelView.pop_back();
 	return 0;
 }
 
 int gr_ucircle(fix xc1, fix yc1, fix r1)
 {
-	int c, nsides;
-	c=grd_curcanv->cv_color;
-	OGL_DISABLE(TEXTURE_2D);
-	glColor4f(CPAL2Tr(c),CPAL2Tg(c),CPAL2Tb(c),(grd_curcanv->cv_fade_level >= GR_FADE_OFF)?1.0:1.0 - (float)grd_curcanv->cv_fade_level / ((float)GR_FADE_LEVELS - 1.0));
-	glPushMatrix();
-	glTranslatef(
-	             (f2fl(xc1) + grd_curcanv->cv_bitmap.bm_x + 0.5) / (float)last_width,
-	             1.0 - (f2fl(yc1) + grd_curcanv->cv_bitmap.bm_y + 0.5) / (float)last_height,0);
-	glScalef(f2fl(r1) / last_width, f2fl(r1) / last_height, 1.0);
+	int nsides;
+
+	ModelView.push_back(  ModelView.back() );
+	ogl_translate(
+	              (f2fl(xc1) + grd_curcanv->cv_bitmap.bm_x + 0.5) / (float)last_width,
+	              1.0 - (f2fl(yc1) + grd_curcanv->cv_bitmap.bm_y + 0.5) / (float)last_height,0);
+	ogl_scale(f2fl(r1) / last_width, f2fl(r1) / last_height, 1.0);
+
 	nsides = 10 + 2 * (int)(M_PI * f2fl(r1) / 19);
 	if(!circle_va)
 		circle_va = circle_array_init(nsides);
-	ogl_drawcircle(nsides, GL_LINE_LOOP, circle_va);
-	glPopMatrix();
+
+	GLState.color4f[0] = PAL2Tr(grd_curcanv->cv_color);
+	GLState.color4f[1] = PAL2Tg(grd_curcanv->cv_color);
+	GLState.color4f[2] = PAL2Tb(grd_curcanv->cv_color);
+	GLState.color4f[3] = (grd_curcanv->cv_fade_level >= GR_FADE_OFF)?1.0:1.0 - (float)grd_curcanv->cv_fade_level / ((float)GR_FADE_LEVELS - 1.0);
+
+	GLState.mode = GL_LINE_LOOP;
+	GLState.view = POSITION_XY;
+	GLState.count = nsides;
+	GLState.stride = 0;
+	GLState.v_pos = circle_va;
+
+	ogl_draw_arrays( GLState );
+
+	ModelView.pop_back();
 	return 0;
 }
 
@@ -805,20 +803,32 @@ int gr_circle(fix xc1,fix yc1,fix r1){
 
 int gr_disk(fix x,fix y,fix r)
 {
-	int c, nsides;
-	c=grd_curcanv->cv_color;
-	OGL_DISABLE(TEXTURE_2D);
-	glColor4f(CPAL2Tr(c),CPAL2Tg(c),CPAL2Tb(c),(grd_curcanv->cv_fade_level >= GR_FADE_OFF)?1.0:1.0 - (float)grd_curcanv->cv_fade_level / ((float)GR_FADE_LEVELS - 1.0));
-	glPushMatrix();
-	glTranslatef(
-	             (f2fl(x) + grd_curcanv->cv_bitmap.bm_x + 0.5) / (float)last_width,
-	             1.0 - (f2fl(y) + grd_curcanv->cv_bitmap.bm_y + 0.5) / (float)last_height,0);
-	glScalef(f2fl(r) / last_width, f2fl(r) / last_height, 1.0);
+	int nsides;
+
+	ModelView.push_back(  ModelView.back() );
+	ogl_translate( 
+                   (f2fl(x) + grd_curcanv->cv_bitmap.bm_x + 0.5) / (float)last_width,
+                   1.0 - (f2fl(y) + grd_curcanv->cv_bitmap.bm_y + 0.5) / (float)last_height,0);
+	ogl_scale( f2fl(r) / last_width, f2fl(r) / last_height, 1.0 );
+
 	nsides = 10 + 2 * (int)(M_PI * f2fl(r) / 19);
 	if(!disk_va)
 		disk_va = circle_array_init(nsides);
-	ogl_drawcircle(nsides, GL_TRIANGLE_FAN, disk_va);
-	glPopMatrix();
+	
+	GLState.color4f[0] = PAL2Tr(grd_curcanv->cv_color);
+	GLState.color4f[1] = PAL2Tg(grd_curcanv->cv_color);
+	GLState.color4f[2] = PAL2Tb(grd_curcanv->cv_color);
+	GLState.color4f[3] = (grd_curcanv->cv_fade_level >= GR_FADE_OFF)?1.0:1.0 - (float)grd_curcanv->cv_fade_level / ((float)GR_FADE_LEVELS - 1.0);
+
+	GLState.mode = GL_TRIANGLE_FAN;
+	GLState.view = POSITION_XY;
+	GLState.count = nsides;
+	GLState.stride = 0;
+	GLState.v_pos = disk_va;
+
+	ogl_draw_arrays( GLState );
+
+	ModelView.pop_back();
 	return 0;
 }
 
@@ -827,21 +837,11 @@ int gr_disk(fix x,fix y,fix r)
  */
 bool g3_draw_poly(int nv,g3s_point **pointlist)
 {
-	int c, index3, index4;
-	float color_r, color_g, color_b, color_a;
-	GLfloat *vertex_array, *color_array;
-
-	MALLOC(vertex_array, GLfloat, nv*3);
-	MALLOC(color_array, GLfloat, nv*4);
+	int c;
+	vec3f_t v[nv];
+	GLfloat color_a;
 
 	r_polyc++;
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glEnableClientState(GL_COLOR_ARRAY);
-	c = grd_curcanv->cv_color;
-	OGL_DISABLE(TEXTURE_2D);
-	color_r = PAL2Tr(c);
-	color_g = PAL2Tg(c);
-	color_b = PAL2Tb(c);
 
 	if (grd_curcanv->cv_fade_level >= GR_FADE_OFF)
 		color_a = 1.0;
@@ -849,25 +849,23 @@ bool g3_draw_poly(int nv,g3s_point **pointlist)
 		color_a = 1.0 - (float)grd_curcanv->cv_fade_level / ((float)GR_FADE_LEVELS - 1.0);
 
 	for (c=0; c<nv; c++){
-		index3 = c * 3;
-		index4 = c * 4;
-		color_array[index4]    = color_r;
-		color_array[index4+1]  = color_g;
-		color_array[index4+2]  = color_b;
-		color_array[index4+3]  = color_a;
-		vertex_array[index3]   = f2glf(pointlist[c]->p3_vec.x);
-		vertex_array[index3+1] = f2glf(pointlist[c]->p3_vec.y);
-		vertex_array[index3+2] = -f2glf(pointlist[c]->p3_vec.z);
+		v[c][0] =  f2glf(pointlist[c]->p3_vec.x);
+		v[c][1] =  f2glf(pointlist[c]->p3_vec.y);
+		v[c][2] = -f2glf(pointlist[c]->p3_vec.z);		
 	}
 
-	glVertexPointer(3, GL_FLOAT, 0, vertex_array);
-	glColorPointer(4, GL_FLOAT, 0, color_array);
-	glDrawArrays(GL_TRIANGLE_FAN, 0, nv);
-	glDisableClientState(GL_VERTEX_ARRAY);
-	glDisableClientState(GL_COLOR_ARRAY);
+	GLState.color4f[0] = PAL2Tr(grd_curcanv->cv_color);
+	GLState.color4f[1] = PAL2Tg(grd_curcanv->cv_color);
+	GLState.color4f[2] = PAL2Tb(grd_curcanv->cv_color);
+	GLState.color4f[3] = color_a;
+	
+	GLState.mode = GL_TRIANGLE_FAN;
+	GLState.view = POSITION_XYZ;
+	GLState.count = nv;
+	GLState.stride = 0;
+	GLState.v_pos = &v[0][0];
 
-	d_free(vertex_array);
-	d_free(color_array);
+	ogl_draw_arrays( GLState );
 
 	return 0;
 }
@@ -882,75 +880,63 @@ void draw_tmap_flat(grs_bitmap *,int,g3s_point **){
 
 /*
  * Everything texturemapped (walls, robots, ship)
- */ 
+ */
 bool g3_draw_tmap(int nv,g3s_point **pointlist,g3s_uvl *uvl_list,g3s_lrgb *light_rgb,grs_bitmap *bm)
 {
-	int c, index2, index3, index4;
-	GLfloat *vertex_array, *color_array, *texcoord_array, color_alpha = 1.0;
+	int c;
+	vertex_tex_t v[nv];
+	GLfloat color_alpha = 1.0;
 
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glEnableClientState(GL_COLOR_ARRAY);
-	
 	if (tmap_drawer_ptr == draw_tmap) {
-		glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-		OGL_ENABLE(TEXTURE_2D);
-		ogl_bindbmtex(bm);
-		ogl_texwrap(bm->gltexture, GL_REPEAT);
+		ogl_checkbmtex(bm);
 		r_tpolyc++;
 		color_alpha = (grd_curcanv->cv_fade_level >= GR_FADE_OFF)?1.0:(1.0 - (float)grd_curcanv->cv_fade_level / ((float)GR_FADE_LEVELS - 1.0));
 	} else if (tmap_drawer_ptr == draw_tmap_flat) {
-		OGL_DISABLE(TEXTURE_2D);
 		/* for cloaked state faces */
-		color_alpha = 1.0 - (grd_curcanv->cv_fade_level/(GLfloat)NUM_LIGHTING_LEVELS);
+		GLState.color4f[0] = 0;
+		GLState.color4f[1] = 0;
+		GLState.color4f[2] = 0;
+		GLState.color4f[3] = 1.0 - (grd_curcanv->cv_fade_level/(GLfloat)NUM_LIGHTING_LEVELS);
+		
 	} else {
 		glmprintf((0,"g3_draw_tmap: unhandled tmap_drawer %p\n",tmap_drawer_ptr));
 		return 0;
 	}
+	
+	for (c=0; c<nv; c++)
+	{
+		v[c].position[0] =  f2glf(pointlist[c]->p3_vec.x);
+		v[c].position[1] =  f2glf(pointlist[c]->p3_vec.y);
+		v[c].position[2] = -f2glf(pointlist[c]->p3_vec.z);
 
-	MALLOC(vertex_array, GLfloat, nv*3);
-	MALLOC(color_array, GLfloat, nv*4);
-	MALLOC(texcoord_array, GLfloat, nv*2);
-
-	for (c=0; c<nv; c++) {
-		index2 = c * 2;
-		index3 = c * 3;
-		index4 = c * 4;
-		
-		vertex_array[index3]     = f2glf(pointlist[c]->p3_vec.x);
-		vertex_array[index3+1]   = f2glf(pointlist[c]->p3_vec.y);
-		vertex_array[index3+2]   = -f2glf(pointlist[c]->p3_vec.z);
-		if (tmap_drawer_ptr == draw_tmap_flat) {
-			color_array[index4]      = 0;
-			color_array[index4+1]    = color_array[index4];
-			color_array[index4+2]    = color_array[index4];
-			color_array[index4+3]    = color_alpha;
+		if (tmap_drawer_ptr == draw_tmap)
+		{
+			v[c].color[0] = 255.0f*((bm->bm_flags & BM_FLAG_NO_LIGHTING) ? 1.0 : f2glf(light_rgb[c].r));
+			v[c].color[1] = 255.0f*((bm->bm_flags & BM_FLAG_NO_LIGHTING) ? 1.0 : f2glf(light_rgb[c].g));
+			v[c].color[2] = 255.0f*((bm->bm_flags & BM_FLAG_NO_LIGHTING) ? 1.0 : f2glf(light_rgb[c].b));
+			v[c].color[3] = 255.0f*(color_alpha);
 			
-		} else { 
-			color_array[index4]      = bm->bm_flags & BM_FLAG_NO_LIGHTING ? 1.0 : f2glf(light_rgb[c].r);
-			color_array[index4+1]    = bm->bm_flags & BM_FLAG_NO_LIGHTING ? 1.0 : f2glf(light_rgb[c].g);
-			color_array[index4+2]    = bm->bm_flags & BM_FLAG_NO_LIGHTING ? 1.0 : f2glf(light_rgb[c].b);
-			color_array[index4+3]    = color_alpha;
+			v[c].texcoord[0] = f2glf(uvl_list[c].u);
+			v[c].texcoord[1] = f2glf(uvl_list[c].v);
 		}
-		texcoord_array[index2]   = f2glf(uvl_list[c].u);
-		texcoord_array[index2+1] = f2glf(uvl_list[c].v);
+	}
+
+	GLState.mode = GL_TRIANGLE_FAN;
+	GLState.view = POSITION_XYZ;
+	GLState.count = nv;
+	GLState.stride = sizeof(vertex_tex_t);
+	GLState.v_pos = &v[0].position[0];
+	
+	if (tmap_drawer_ptr == draw_tmap)
+	{
+	    GLState.tex[0] = bm->gltexture->handle;
+	    GLState.texwrap[0] = GL_REPEAT;
+	    GLState.v_tex[0] = &v[0].texcoord[0];
+	    GLState.v_clr = &v[0].color[0];
 	}
 	
-	glVertexPointer(3, GL_FLOAT, 0, vertex_array);
-	glColorPointer(4, GL_FLOAT, 0, color_array);
-	if (tmap_drawer_ptr == draw_tmap) {
-		glTexCoordPointer(2, GL_FLOAT, 0, texcoord_array);  
-	}
+	ogl_draw_arrays( GLState );	
 	
-	glDrawArrays(GL_TRIANGLE_FAN, 0, nv);
-	
-	glDisableClientState(GL_VERTEX_ARRAY);
-	glDisableClientState(GL_COLOR_ARRAY);
-	glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-
-	d_free(vertex_array);
-	d_free(color_array);
-	d_free(texcoord_array);
-
 	return 0;
 }
 
@@ -959,69 +945,61 @@ bool g3_draw_tmap(int nv,g3s_point **pointlist,g3s_uvl *uvl_list,g3s_lrgb *light
  */
 bool g3_draw_tmap_2(int nv, g3s_point **pointlist, g3s_uvl *uvl_list, g3s_lrgb *light_rgb, grs_bitmap *bmbot, grs_bitmap *bm, int orient)
 {
-	int c, index2, index3, index4;
-	GLfloat *vertex_array, *color_array, *texcoord_array;
-
-	MALLOC(vertex_array, GLfloat, nv*3);
-	MALLOC(color_array, GLfloat, nv*4);
-	MALLOC(texcoord_array, GLfloat, nv*2);
-
-	g3_draw_tmap(nv,pointlist,uvl_list,light_rgb,bmbot);//draw the bottom texture first.. could be optimized with multitexturing..
-	
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glEnableClientState(GL_COLOR_ARRAY);
-	glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+	int c;  
+	vertex_mtex_t v[nv];
 	
 	r_tpolyc++;
-	OGL_ENABLE(TEXTURE_2D);
-	ogl_bindbmtex(bm);
-	ogl_texwrap(bm->gltexture,GL_REPEAT);
-	
+
+	ogl_checkbmtex(bm);
+	ogl_checkbmtex(bmbot);
+
 	for (c=0; c<nv; c++) {
-		index2 = c * 2;
-		index3 = c * 3;
-		index4 = c * 4;
-		
 		switch(orient){
 			case 1:
-				texcoord_array[index2]   = 1.0-f2glf(uvl_list[c].v);
-				texcoord_array[index2+1] = f2glf(uvl_list[c].u);
+				v[c].texcoord[1][0] = 1.0-f2glf(uvl_list[c].v);
+				v[c].texcoord[1][1] = f2glf(uvl_list[c].u);
 				break;
 			case 2:
-				texcoord_array[index2]   = 1.0-f2glf(uvl_list[c].u);
-				texcoord_array[index2+1] = 1.0-f2glf(uvl_list[c].v);
+				v[c].texcoord[1][0] = 1.0-f2glf(uvl_list[c].u);
+				v[c].texcoord[1][1] = 1.0-f2glf(uvl_list[c].v);
 				break;
 			case 3:
-				texcoord_array[index2]   = f2glf(uvl_list[c].v);
-				texcoord_array[index2+1] = 1.0-f2glf(uvl_list[c].u);
+				v[c].texcoord[1][0] = f2glf(uvl_list[c].v);
+				v[c].texcoord[1][1] = 1.0-f2glf(uvl_list[c].u);
 				break;
 			default:
-				texcoord_array[index2]   = f2glf(uvl_list[c].u);
-				texcoord_array[index2+1] = f2glf(uvl_list[c].v);
+				v[c].texcoord[1][0] = f2glf(uvl_list[c].u);
+				v[c].texcoord[1][1] = f2glf(uvl_list[c].v);
 				break;
 		}
 		
-		color_array[index4]      = bm->bm_flags & BM_FLAG_NO_LIGHTING ? 1.0 : f2glf(light_rgb[c].r);
-		color_array[index4+1]    = bm->bm_flags & BM_FLAG_NO_LIGHTING ? 1.0 : f2glf(light_rgb[c].g);
-		color_array[index4+2]    = bm->bm_flags & BM_FLAG_NO_LIGHTING ? 1.0 : f2glf(light_rgb[c].b);
-		color_array[index4+3]    = (grd_curcanv->cv_fade_level >= GR_FADE_OFF)?1.0:(1.0 - (float)grd_curcanv->cv_fade_level / ((float)GR_FADE_LEVELS - 1.0));
+		v[c].texcoord[0][0] = f2glf(uvl_list[c].u);
+		v[c].texcoord[0][1] = f2glf(uvl_list[c].v);
 		
-		vertex_array[index3]     = f2glf(pointlist[c]->p3_vec.x);
-		vertex_array[index3+1]   = f2glf(pointlist[c]->p3_vec.y);
-		vertex_array[index3+2]   = -f2glf(pointlist[c]->p3_vec.z);
-	}
-	
-	glVertexPointer(3, GL_FLOAT, 0, vertex_array);
-	glColorPointer(4, GL_FLOAT, 0, color_array);
-	glTexCoordPointer(2, GL_FLOAT, 0, texcoord_array);  
-	glDrawArrays(GL_TRIANGLE_FAN, 0, nv);
-	glDisableClientState(GL_VERTEX_ARRAY);
-	glDisableClientState(GL_COLOR_ARRAY);
-	glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+		v[c].color[0] = 255.0f*(bm->bm_flags & BM_FLAG_NO_LIGHTING ? 1.0 : f2glf(light_rgb[c].r));
+		v[c].color[1] = 255.0f*(bm->bm_flags & BM_FLAG_NO_LIGHTING ? 1.0 : f2glf(light_rgb[c].g));
+		v[c].color[2] = 255.0f*(bm->bm_flags & BM_FLAG_NO_LIGHTING ? 1.0 : f2glf(light_rgb[c].b));
+		v[c].color[3] = 255.0f*((grd_curcanv->cv_fade_level >= GR_FADE_OFF)?1.0:(1.0 - (float)grd_curcanv->cv_fade_level / ((float)GR_FADE_LEVELS - 1.0)));
 
-	d_free(vertex_array);
-	d_free(color_array);
-	d_free(texcoord_array);
+		v[c].position[0] =  f2glf(pointlist[c]->p3_vec.x);
+		v[c].position[1] =  f2glf(pointlist[c]->p3_vec.y);
+		v[c].position[2] = -f2glf(pointlist[c]->p3_vec.z);
+	}
+
+	GLState.mode = GL_TRIANGLE_FAN;
+	GLState.view = POSITION_XYZ;
+	GLState.count = nv;
+	GLState.stride = sizeof(vertex_mtex_t);
+	GLState.v_pos = &v[0].position[0];
+	GLState.v_clr = &v[0].color[0];
+	
+	GLState.tex[0] = bmbot->gltexture->handle;
+	GLState.tex[1] = bm->gltexture->handle;
+	GLState.texwrap[0] = GLState.texwrap[1] = GL_REPEAT;
+	GLState.v_tex[0] = &v[0].texcoord[0][0];
+	GLState.v_tex[1] = &v[0].texcoord[1][0];
+	
+	ogl_draw_arrays( GLState );
 
 	return 0;
 }
@@ -1031,20 +1009,14 @@ bool g3_draw_tmap_2(int nv, g3s_point **pointlist, g3s_uvl *uvl_list, g3s_lrgb *
  */
 bool g3_draw_bitmap(vms_vector *pos,fix width,fix height,grs_bitmap *bm)
 {
+    vertex_tex_uni_t v[4];
 	vms_vector pv,v1;
 	int i;
-	GLfloat vertex_array[12], color_array[16], texcoord_array[8];
 
 	r_bitmapc++;
 	v1.z=0;
-	
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glEnableClientState(GL_COLOR_ARRAY);
-	glEnableClientState(GL_TEXTURE_COORD_ARRAY);
 
-	OGL_ENABLE(TEXTURE_2D);
-	ogl_bindbmtex(bm);
-	ogl_texwrap(bm->gltexture,GL_CLAMP_TO_EDGE);
+	ogl_checkbmtex(bm);
 
 	width = fixmul(width,Matrix_scale.x);
 	height = fixmul(height,Matrix_scale.y);
@@ -1053,47 +1025,52 @@ bool g3_draw_bitmap(vms_vector *pos,fix width,fix height,grs_bitmap *bm)
 		vm_vec_rotate(&pv,&v1,&View_matrix);
 		switch (i){
 			case 0:
-				texcoord_array[i*2] = 0.0;
-				texcoord_array[i*2+1] = 0.0;
+				v[i].texcoord[0] = 0.0;
+				v[i].texcoord[1] = 0.0;
 				pv.x+=-width;
 				pv.y+=height;
 				break;
 			case 1:
-				texcoord_array[i*2] = bm->gltexture->u;
-				texcoord_array[i*2+1] = 0.0;
+				v[i].texcoord[0] = bm->gltexture->u;
+				v[i].texcoord[1] = 0.0;
 				pv.x+=width;
 				pv.y+=height;
 				break;
 			case 2:
-				texcoord_array[i*2] = bm->gltexture->u;
-				texcoord_array[i*2+1] = bm->gltexture->v;
+				v[i].texcoord[0] = bm->gltexture->u;
+				v[i].texcoord[1] = bm->gltexture->v;
 				pv.x+=width;
 				pv.y+=-height;
 				break;
 			case 3:
-				texcoord_array[i*2] = 0.0;
-				texcoord_array[i*2+1] = bm->gltexture->v;
+				v[i].texcoord[0] = 0.0;
+				v[i].texcoord[1] = bm->gltexture->v;
 				pv.x+=-width;
 				pv.y+=-height;
 				break;
 		}
 
-		color_array[i*4]    = 1.0;
-		color_array[i*4+1]  = 1.0;
-		color_array[i*4+2]  = 1.0;
-		color_array[i*4+3]  = (grd_curcanv->cv_fade_level >= GR_FADE_OFF)?1.0:(1.0 - (float)grd_curcanv->cv_fade_level / ((float)GR_FADE_LEVELS - 1.0));
-		
-		vertex_array[i*3]   = f2glf(pv.x);
-		vertex_array[i*3+1] = f2glf(pv.y);
-		vertex_array[i*3+2] = -f2glf(pv.z);
+		v[i].position[0] =  f2glf(pv.x);
+		v[i].position[1] =  f2glf(pv.y);
+		v[i].position[2] = -f2glf(pv.z);
 	}
-	glVertexPointer(3, GL_FLOAT, 0, vertex_array);
-	glColorPointer(4, GL_FLOAT, 0, color_array);
-	glTexCoordPointer(2, GL_FLOAT, 0, texcoord_array);  
-	glDrawArrays(GL_TRIANGLE_FAN, 0, 4); // Replaced GL_QUADS
-	glDisableClientState(GL_VERTEX_ARRAY);
-	glDisableClientState(GL_COLOR_ARRAY);
-	glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+	
+	GLState.color4f[0] = 1.0;
+	GLState.color4f[1] = 1.0;
+	GLState.color4f[2] = 1.0;
+	GLState.color4f[3] = (grd_curcanv->cv_fade_level >= GR_FADE_OFF)?1.0:(1.0 - (float)grd_curcanv->cv_fade_level / ((float)GR_FADE_LEVELS - 1.0));	
+
+	GLState.mode = GL_TRIANGLE_FAN;
+	GLState.view = POSITION_XYZ;
+	GLState.count = 4;
+	GLState.stride = sizeof(vertex_tex_uni_t);
+	GLState.v_pos = &v[0].position[0];
+	
+	GLState.tex[0] = bm->gltexture->handle;
+	GLState.texwrap[0] = GL_CLAMP_TO_EDGE;
+	GLState.v_tex[0] = &v[0].texcoord[0];
+	
+	ogl_draw_arrays( GLState );
 
 	return 0;
 }
@@ -1104,65 +1081,63 @@ bool g3_draw_bitmap(vms_vector *pos,fix width,fix height,grs_bitmap *bm)
  */
 bool ogl_ubitblt_i(int dw,int dh,int dx,int dy, int sw, int sh, int sx, int sy, grs_bitmap * src, grs_bitmap * dest, int texfilt)
 {
+	vertex_tex_uni_t v[4];
 	GLfloat xo,yo,xs,ys,u1,v1;
-	GLfloat color_array[] = { 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 };
-	GLfloat texcoord_array[] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
-	GLfloat vertex_array[] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
 	ogl_texture tex;
 	r_ubitbltc++;
-
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glEnableClientState(GL_COLOR_ARRAY);
-	glEnableClientState(GL_TEXTURE_COORD_ARRAY);
 
 	ogl_init_texture(&tex, sw, sh, OGL_FLAG_ALPHA);
 	tex.prio = 0.0;
 	tex.lw=src->bm_rowsize;
 
 	u1=v1=0;
-	
+
 	dx+=dest->bm_x;
 	dy+=dest->bm_y;
 	xo=dx/(float)last_width;
 	xs=dw/(float)last_width;
 	yo=1.0-dy/(float)last_height;
 	ys=dh/(float)last_height;
-	
-	OGL_ENABLE(TEXTURE_2D);
-	
+
 	ogl_pal=gr_current_pal;
 	ogl_loadtexture(src->bm_data, sx, sy, &tex, src->bm_flags, 0, texfilt);
 	ogl_pal=gr_palette;
-	OGL_BINDTEXTURE(tex.handle);
+
+	v[0].position[0] = xo;
+	v[0].position[1] = yo;
+	v[1].position[0] = xo+xs;
+	v[1].position[1] = yo;
+	v[2].position[0] = xo+xs;
+	v[2].position[1] = yo-ys;
+	v[3].position[0] = xo;
+	v[3].position[1] = yo-ys;
+
+	v[0].texcoord[0] = u1;
+	v[0].texcoord[1] = v1;
+	v[1].texcoord[0] = tex.u;
+	v[1].texcoord[1] = v1;
+	v[2].texcoord[0] = tex.u;
+	v[2].texcoord[1] = tex.v;
+	v[3].texcoord[0] = u1;
+	v[3].texcoord[1] = tex.v;
 	
-	ogl_texwrap(&tex,GL_CLAMP_TO_EDGE);
+	GLState.color4f[0] = 1.0;
+	GLState.color4f[1] = 1.0;
+	GLState.color4f[2] = 1.0;
+	GLState.color4f[3] = 1.0;	
 
-	vertex_array[0] = xo;
-	vertex_array[1] = yo;
-	vertex_array[2] = xo+xs;
-	vertex_array[3] = yo;
-	vertex_array[4] = xo+xs;
-	vertex_array[5] = yo-ys;
-	vertex_array[6] = xo;
-	vertex_array[7] = yo-ys;
+	GLState.mode = GL_TRIANGLE_FAN;
+	GLState.view = POSITION_XY;
+	GLState.count = 4;
+	GLState.stride = sizeof(vertex_tex_uni_t);
+	GLState.v_pos = &v[0].position[0];
+	
+	GLState.tex[0] = tex.handle;
+	GLState.texwrap[0] = GL_CLAMP_TO_EDGE;
+	GLState.v_tex[0] = &v[0].texcoord[0];	
+	
+	ogl_draw_arrays( GLState );
 
-	texcoord_array[0] = u1;
-	texcoord_array[1] = v1;
-	texcoord_array[2] = tex.u;
-	texcoord_array[3] = v1;
-	texcoord_array[4] = tex.u;
-	texcoord_array[5] = tex.v;
-	texcoord_array[6] = u1;
-	texcoord_array[7] = tex.v;
-
-	glVertexPointer(2, GL_FLOAT, 0, vertex_array);
-	glColorPointer(4, GL_FLOAT, 0, color_array);
-	glTexCoordPointer(2, GL_FLOAT, 0, texcoord_array);  
-	glDrawArrays(GL_TRIANGLE_FAN, 0, 4);//replaced GL_QUADS
-
-	glDisableClientState(GL_VERTEX_ARRAY);
-	glDisableClientState(GL_COLOR_ARRAY);
-	glDisableClientState(GL_TEXTURE_COORD_ARRAY);
 	ogl_freetexture(&tex);
 	return 0;
 }
@@ -1182,7 +1157,7 @@ void ogl_toggle_depth_test(int enable)
 		glDisable(GL_DEPTH_TEST);
 }
 
-/* 
+/*
  * set blending function
  */
 void ogl_set_blending()
@@ -1221,29 +1196,29 @@ void ogl_start_frame(void){
 	glEnable(GL_CULL_FACE);
 	glCullFace(GL_FRONT);
 
+#if defined(OGL1)
 	glShadeModel(GL_SMOOTH);
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();//clear matrix
-#ifdef OGLES
-	perspective(90.0,1.0,0.1,5000.0);   
-#else
-	gluPerspective(90.0,1.0,0.1,5000.0);
+	glMatrixMode( GL_PROJECTION );
+	glLoadMatrixf( ProjPersp.data() );
 #endif
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();//clear matrix
+#if defined(OGL2)    
+        Projection = ProjPersp;
+#endif	
+	ModelView.back() = cml::identity_4x4();
 }
 
 void ogl_end_frame(void){
 	OGL_VIEWPORT(0,0,grd_curscreen->sc_w,grd_curscreen->sc_h);
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();//clear matrix
-#ifdef OGLES
-	glOrthof(0.0, 1.0, 0.0, 1.0, -1.0, 1.0);
-#else
-	glOrtho(0.0, 1.0, 0.0, 1.0, -1.0, 1.0);
+
+#if defined(OGL1)
+	glMatrixMode( GL_PROJECTION );
+	glLoadMatrixf( ProjOrtho.data() );
 #endif
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();//clear matrix
+#if defined(OGL2)    
+        Projection = ProjOrtho;
+#endif
+	ModelView.back() = cml::identity_4x4();
+
 	glDisable(GL_CULL_FACE);
 	glDisable(GL_DEPTH_TEST);
 }
@@ -1504,14 +1479,14 @@ static int ogl_loadtexture (unsigned char *data, int dxo, int dyo, ogl_texture *
 
 	if (data) {
 		if (bm_flags >= 0)
-			ogl_filltexbuf (data, texbuf, tex->lw, tex->w, tex->h, dxo, dyo, tex->tw, tex->th, 
+			ogl_filltexbuf (data, texbuf, tex->lw, tex->w, tex->h, dxo, dyo, tex->tw, tex->th,
 								 tex->format, bm_flags, data_format);
 		else {
 			if (!dxo && !dyo && (tex->w == tex->tw) && (tex->h == tex->th))
 				bufP = data;
 			else {
 				int h, w, tw;
-				
+
 				h = tex->lw / tex->w;
 				w = (tex->w - dxo) * h;
 				data += tex->lw * dyo + h * dxo;
@@ -1531,17 +1506,16 @@ static int ogl_loadtexture (unsigned char *data, int dxo, int dyo, ogl_texture *
 	}
 	// Generate OpenGL texture IDs.
 	glGenTextures (1, &tex->handle);
-#ifndef OGLES
-	//set priority
-	glPrioritizeTextures (1, &tex->handle, &tex->prio);
-#endif
+
 	// Give our data to OpenGL.
-	OGL_BINDTEXTURE(tex->handle);
-	glTexEnvi (GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+	glBindTexture( GL_TEXTURE_2D, tex->handle);
+#if defined(OG1)
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+#endif	
 
 	if (texfilt)
 	{
-#ifdef OGLES // in OpenGL ES 1.1 the mipmaps are automatically generated by a parameter
+#if defined(OGL1)
 		glTexParameteri (GL_TEXTURE_2D, GL_GENERATE_MIPMAP, texfilt ? GL_TRUE : GL_FALSE);
 #endif
 		glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -1557,24 +1531,15 @@ static int ogl_loadtexture (unsigned char *data, int dxo, int dyo, ogl_texture *
 		glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	}
 
-#ifndef OGLES // see comment above
-	if (texfilt)
-	{
-		gluBuild2DMipmaps (
-				GL_TEXTURE_2D, tex->internalformat, 
-				tex->tw, tex->th, tex->format, 
-				GL_UNSIGNED_BYTE, 
-				bufP);
-	}
-	else
+	glTexImage2D (
+	    GL_TEXTURE_2D, 0, tex->internalformat,
+	    tex->tw, tex->th, 0, tex->format, // RGBA textures.
+	    GL_UNSIGNED_BYTE, // imageData is a GLubyte pointer.
+	    bufP);
+
+#if defined(OGL2)
+	glGenerateMipmap( GL_TEXTURE_2D );
 #endif
-	{
-		glTexImage2D (
-			GL_TEXTURE_2D, 0, tex->internalformat,
-			tex->tw, tex->th, 0, tex->format, // RGBA textures.
-			GL_UNSIGNED_BYTE, // imageData is a GLubyte pointer.
-			bufP);
-	}
 
 	tex_set_size (tex);
 	r_texcount++;
@@ -1681,25 +1646,19 @@ void ogl_freebmtexture(grs_bitmap *bm){
 }
 
 /*
- * Menu / gauges 
+ * Menu / gauges
  */
 bool ogl_ubitmapm_cs(int x, int y,int dw, int dh, grs_bitmap *bm,int c, int scale) // to scale bitmaps
 {
+	vertex_tex_uni_t v[4];
 	GLfloat xo,yo,xf,yf,u1,u2,v1,v2,color_r,color_g,color_b,h;
-	GLfloat color_array[] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
-	GLfloat texcoord_array[] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
-	GLfloat vertex_array[] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
-	
+
 	x+=grd_curcanv->cv_bitmap.bm_x;
 	y+=grd_curcanv->cv_bitmap.bm_y;
 	xo=x/(float)last_width;
 	xf=(bm->bm_w+x)/(float)last_width;
 	yo=1.0-y/(float)last_height;
 	yf=1.0-(bm->bm_h+y)/(float)last_height;
-
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glEnableClientState(GL_COLOR_ARRAY);
-	glEnableClientState(GL_TEXTURE_COORD_ARRAY);
 
 	if (dw < 0)
 		dw = grd_curcanv->cv_bitmap.bm_w;
@@ -1717,10 +1676,8 @@ bool ogl_ubitmapm_cs(int x, int y,int dw, int dh, grs_bitmap *bm,int c, int scal
 	yo = 1.0 - y / ((double) last_height * h);
 	yf = 1.0 - (dh + y) / ((double) last_height * h);
 
-	OGL_ENABLE(TEXTURE_2D);
-	ogl_bindbmtex(bm);
-	ogl_texwrap(bm->gltexture,GL_CLAMP_TO_EDGE);
-	
+	ogl_checkbmtex(bm);
+
 	if (bm->bm_x==0){
 		u1=0;
 		if (bm->bm_w==bm->gltexture->w)
@@ -1750,38 +1707,381 @@ bool ogl_ubitmapm_cs(int x, int y,int dw, int dh, grs_bitmap *bm,int c, int scal
 		color_r = CPAL2Tr(c);
 		color_g = CPAL2Tg(c);
 		color_b = CPAL2Tb(c);
-	}  
+	}
 
-	color_array[0] = color_array[4] = color_array[8] = color_array[12] = color_r;
-	color_array[1] = color_array[5] = color_array[9] = color_array[13] = color_g;
-	color_array[2] = color_array[6] = color_array[10] = color_array[14] = color_b;
-	color_array[3] = color_array[7] = color_array[11] = color_array[15] = 1.0;
+	v[0].position[0] = xo;
+	v[0].position[1] = yo;
+	v[1].position[0] = xf;
+	v[1].position[1] = yo;
+	v[2].position[0] = xf;
+	v[2].position[1] = yf;
+	v[3].position[0] = xo;
+	v[3].position[1] = yf;
 
-	vertex_array[0] = xo;
-	vertex_array[1] = yo;
-	vertex_array[2] = xf;
-	vertex_array[3] = yo;
-	vertex_array[4] = xf;
-	vertex_array[5] = yf;
-	vertex_array[6] = xo;
-	vertex_array[7] = yf;
-
-	texcoord_array[0] = u1;
-	texcoord_array[1] = v1;
-	texcoord_array[2] = u2;
-	texcoord_array[3] = v1;
-	texcoord_array[4] = u2;
-	texcoord_array[5] = v2;
-	texcoord_array[6] = u1;
-	texcoord_array[7] = v2;
-
-	glVertexPointer(2, GL_FLOAT, 0, vertex_array);
-	glColorPointer(4, GL_FLOAT, 0, color_array);
-	glTexCoordPointer(2, GL_FLOAT, 0, texcoord_array);  
-	glDrawArrays(GL_TRIANGLE_FAN, 0, 4);//replaced GL_QUADS
-	glDisableClientState(GL_VERTEX_ARRAY);
-	glDisableClientState(GL_COLOR_ARRAY);
-	glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+	v[0].texcoord[0] = u1;
+	v[0].texcoord[1] = v1;
+	v[1].texcoord[0] = u2;
+	v[1].texcoord[1] = v1;
+	v[2].texcoord[0] = u2;
+	v[2].texcoord[1] = v2;
+	v[3].texcoord[0] = u1;
+	v[3].texcoord[1] = v2;
 	
+	GLState.color4f[0] = color_r;
+	GLState.color4f[1] = color_g;
+	GLState.color4f[2] = color_b;
+	GLState.color4f[3] = 1.0;	
+
+	GLState.mode = GL_TRIANGLE_FAN;
+	GLState.view = POSITION_XY;
+	GLState.count = 4;
+	GLState.stride = sizeof(vertex_tex_uni_t);
+	GLState.v_pos = &v[0].position[0];
+	
+	GLState.tex[0] = bm->gltexture->handle;
+	GLState.texwrap[0] = GL_CLAMP_TO_EDGE;
+	GLState.v_tex[0] = &v[0].texcoord[0];
+	
+	ogl_draw_arrays( GLState );
+
 	return 0;
+}
+
+#if defined(OGL1)
+void ogl1_draw_arrays( const glstate_t& state )
+{
+    uint8_t p = (state.view >= POSITION_XYZ) ? 3 : 2;
+
+    /* Setup and draw the array */
+    if (state.mode == GL_POINTS) {
+	glPointSize( state.pointsize );
+    }
+    
+    if (state.v_pos != NULL) {
+        glEnableClientState( GL_VERTEX_ARRAY );
+	glVertexPointer( p, GL_FLOAT, state.stride, state.v_pos );
+    }
+
+    if (state.v_clr != NULL) {
+        glEnableClientState( GL_COLOR_ARRAY );
+	glColorPointer( 4, GL_UNSIGNED_BYTE, state.stride, state.v_clr );
+    } else {
+	glColor4f( state.color4f[0], state.color4f[1], state.color4f[2], state.color4f[3] );
+    }
+      
+    /* First texture unit */
+    if (state.v_tex[0] != NULL) {
+        glActiveTexture( GL_TEXTURE0 );
+	glEnable( GL_TEXTURE_2D );
+        glBindTexture( GL_TEXTURE_2D, state.tex[0] );
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, state.texwrap[0]);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, state.texwrap[0]);	
+	
+	if (state.v_tex[1] != NULL) {
+	  
+	  // Interpolate both textures based on alpha from texture 1
+	  // This use crossbar feature to combine textures into one image	  
+	  glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+	  	  
+	  glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_INTERPOLATE);
+	  glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE1);
+	  glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_TEXTURE0);
+	  glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE2_RGB, GL_TEXTURE1);
+	  glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR);
+	  glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
+	  glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND2_RGB, GL_SRC_ALPHA);
+
+	  glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_MODULATE);
+	  glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_PREVIOUS);
+	  glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_ALPHA, GL_TEXTURE0);
+	  glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+	  glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_ALPHA, GL_SRC_ALPHA);
+
+	} else {
+	  glTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
+	}
+
+	glClientActiveTexture( GL_TEXTURE0 );
+        glEnableClientState( GL_TEXTURE_COORD_ARRAY );
+	glTexCoordPointer( 2, GL_FLOAT, state.stride, state.v_tex[0] );
+    }
+    /* Second texture unit */
+    if (state.v_tex[1] != NULL) {
+        glActiveTexture( GL_TEXTURE1 );
+	glEnable( GL_TEXTURE_2D );
+	glBindTexture( GL_TEXTURE_2D, state.tex[1] );
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, state.texwrap[1]);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, state.texwrap[1]);	
+	
+	// Modulate previous texture result with the vertex color
+	// The previous color was full bright, this gives the lighting effect
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+	
+	glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
+	glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_PREVIOUS);
+	glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
+	glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR);
+	glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
+
+	glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_MODULATE);
+	glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_PREVIOUS);
+	glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_ALPHA, GL_PRIMARY_COLOR);
+	glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+	glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_ALPHA, GL_SRC_ALPHA);
+
+	glClientActiveTexture( GL_TEXTURE1 );	
+        glEnableClientState( GL_TEXTURE_COORD_ARRAY );
+	glTexCoordPointer( 2, GL_FLOAT, state.stride, state.v_tex[1] );	
+    }
+
+    /* Calculate the complete transform matrix */
+    glMatrixMode( GL_MODELVIEW );
+    glLoadMatrixf( ModelView.back().data() );
+
+    glDrawArrays( state.mode, 0, state.count );
+
+    if (state.v_pos != NULL) {
+        glDisableClientState( GL_VERTEX_ARRAY );
+    }
+    if (state.v_clr != NULL) {
+        glDisableClientState( GL_COLOR_ARRAY );
+    }
+    if (state.v_tex[1] != NULL) {
+        glDisableClientState( GL_TEXTURE_COORD_ARRAY );
+	glDisable( GL_TEXTURE_2D );
+    }
+    if (state.v_tex[0] != NULL) {
+        glActiveTexture( GL_TEXTURE0 );
+	glClientActiveTexture( GL_TEXTURE0 );
+	glDisable( GL_TEXTURE_2D );
+        glDisableClientState( GL_TEXTURE_COORD_ARRAY );
+    }
+    
+    /* Reset the state */
+    GLState.v_pos    = NULL;
+    GLState.v_clr    = NULL;
+    GLState.v_tex[0] = NULL;
+    GLState.v_tex[1] = NULL;
+    
+    check_opengl_errors( __FILE__, __LINE__ );
+}
+#endif /* OGL1 */
+
+#if defined(OGL2)
+void ogl2_draw_arrays( const glstate_t& state )
+{
+    mat44f_t matMVP;
+    uint8_t p = (state.view >= POSITION_XYZ) ? 3 : 2;
+
+    /* Select the shader program */
+    if (state.v_pos == NULL) {
+        printf( "Shader OGL2 Error: position data can not be NULL\n" );
+        return;
+    } else
+    if (state.v_clr == NULL && state.v_tex[0] == NULL && state.v_tex[1] == NULL) {
+        og12_use_shader(PROGRAM_COLOR_UNIFORM);
+    } else      
+    if (state.v_clr != NULL && state.v_tex[0] == NULL && state.v_tex[1] == NULL) {
+        og12_use_shader(PROGRAM_COLOR);
+    } else
+    if (state.v_clr == NULL && state.v_tex[0] != NULL && state.v_tex[1] == NULL) {
+	og12_use_shader(PROGRAM_TEXTURE_UNIFORM);
+    } else
+    if (state.v_clr != NULL && state.v_tex[0] != NULL && state.v_tex[1] == NULL) {
+	og12_use_shader(PROGRAM_TEXTURE);
+    } else
+    if (state.v_clr != NULL && state.v_tex[0] != NULL && state.v_tex[1] != NULL) {	
+        og12_use_shader(PROGRAM_MULTITEXTURE);
+    } else {
+        printf( "Shader OGL2 Error: unsupported data configuration\n" );
+        return;
+    }
+
+    /* Buffer the data */
+    //Buffer[PROGRAM_MULTITEXTURE].BufferData( 0, sizeof(vertex_mtex_t)*count, vtx );
+
+    /* Setup and draw the array */
+    if (state.mode == GL_POINTS) {
+	glEnable( GL_PROGRAM_POINT_SIZE );
+	glUniform1f( Shaders[ProgramCurrent].NamePs, state.pointsize );
+    }
+    
+    if (state.v_pos != NULL) {
+        glEnableVertexAttribArray( Shaders[ProgramCurrent].NamePos );
+        glVertexAttribPointer( Shaders[ProgramCurrent].NamePos, p, GL_FLOAT, GL_FALSE, state.stride, state.v_pos );
+    }
+
+    if (state.v_clr != NULL) {
+        glEnableVertexAttribArray( Shaders[ProgramCurrent].NameClr );
+        glVertexAttribPointer( Shaders[ProgramCurrent].NameClr, 4, GL_UNSIGNED_BYTE, GL_TRUE, state.stride, state.v_clr );
+    } else {
+	glUniform4fv( Shaders[ProgramCurrent].NameClr, 1, state.color4f.data() );
+    }
+      
+    /* First texture unit */
+    if (state.v_tex[0] != NULL) {
+        glActiveTexture( GL_TEXTURE0 );
+        glBindTexture( GL_TEXTURE_2D, state.tex[0] );
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, state.texwrap[0]);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, state.texwrap[0]);
+	glUniform1i( Shaders[ProgramCurrent].NameSmp0, 0 );
+        glEnableVertexAttribArray( Shaders[ProgramCurrent].NameTex0 );
+        glVertexAttribPointer( Shaders[ProgramCurrent].NameTex0,  2, GL_FLOAT, GL_FALSE, state.stride, state.v_tex[0] );
+    }
+    /* Second texture unit */
+    if (state.v_tex[1] != NULL) {
+        glActiveTexture( GL_TEXTURE1 );
+        glBindTexture( GL_TEXTURE_2D, state.tex[1] );
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, state.texwrap[1]);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, state.texwrap[1]);
+	glUniform1i( Shaders[ProgramCurrent].NameSmp1, 1 );
+        glEnableVertexAttribArray( Shaders[ProgramCurrent].NameTex1 );
+        glVertexAttribPointer( Shaders[ProgramCurrent].NameTex1, 2, GL_FLOAT, GL_FALSE, state.stride, state.v_tex[1] );
+    }
+
+    /* Calculate the complete transform matrix */
+    matMVP = Projection * ModelView.back();
+    glUniformMatrix4fv( Shaders[ProgramCurrent].NameMvp, 1, GL_FALSE, matMVP.data() );
+
+    glDrawArrays( state.mode, 0, state.count );
+
+    if (state.v_pos != NULL) {
+        glDisableVertexAttribArray( Shaders[ProgramCurrent].NamePos );
+    }
+    if (state.v_clr != NULL) {
+        glDisableVertexAttribArray( Shaders[ProgramCurrent].NameClr );
+    }
+    if (state.v_tex[1] != NULL) {
+        glDisableVertexAttribArray( Shaders[ProgramCurrent].NameTex1 );
+    }
+    if (state.v_tex[0] != NULL) {
+        glActiveTexture( GL_TEXTURE0 );
+        glDisableVertexAttribArray( Shaders[ProgramCurrent].NameTex0 );
+    }
+    if (state.mode == GL_POINTS) {
+	glDisable( GL_PROGRAM_POINT_SIZE );
+    }    
+    
+    /* Reset the state */
+    GLState.v_pos    = NULL;
+    GLState.v_clr    = NULL;
+    GLState.v_tex[0] = NULL;
+    GLState.v_tex[1] = NULL;
+    
+    check_opengl_errors( __FILE__, __LINE__ );    
+}
+
+bool ogl2_shader_compile( void )
+{
+	  // Compile the shader code and link into a program
+	if (Shaders[PROGRAM_COLOR].Load( "shaders/shader_color.vert", "shaders/shader_color.frag" ) != 0) {
+	    return false;
+	}
+	if (Shaders[PROGRAM_COLOR_UNIFORM].Load( "shaders/shader_color_uniform.vert", "shaders/shader_color_uniform.frag" ) != 0) {
+	    return false;
+	}	
+	if (Shaders[PROGRAM_TEXTURE].Load( "shaders/shader_texture.vert", "shaders/shader_texture.frag" ) != 0) {
+	    return false;
+	}
+	if (Shaders[PROGRAM_TEXTURE_UNIFORM].Load( "shaders/shader_texture_uniform.vert", "shaders/shader_texture_uniform.frag" ) != 0) {
+	    return false;
+	}	
+	if (Shaders[PROGRAM_MULTITEXTURE].Load( "shaders/shader_multitexture.vert", "shaders/shader_multitexture.frag" ) != 0) {
+	    return false;
+	}
+
+	// Get names for attributes and uniforms
+	Shaders[PROGRAM_COLOR].NamePos = Shaders[PROGRAM_COLOR].GetAttribute( "a_Position" );
+	Shaders[PROGRAM_COLOR].NameClr = Shaders[PROGRAM_COLOR].GetAttribute( "a_Color" );
+	Shaders[PROGRAM_COLOR].NameMvp = Shaders[PROGRAM_COLOR].GetUniform( "u_MVPMatrix" );
+	Shaders[PROGRAM_COLOR].NamePs  = Shaders[PROGRAM_COLOR].GetUniform( "u_PointSize" );
+	
+	Shaders[PROGRAM_COLOR_UNIFORM].NamePos = Shaders[PROGRAM_COLOR_UNIFORM].GetAttribute( "a_Position" );
+	Shaders[PROGRAM_COLOR_UNIFORM].NameClr = Shaders[PROGRAM_COLOR_UNIFORM].GetUniform( "u_Color" );
+	Shaders[PROGRAM_COLOR_UNIFORM].NameMvp = Shaders[PROGRAM_COLOR_UNIFORM].GetUniform( "u_MVPMatrix" );	
+	Shaders[PROGRAM_COLOR_UNIFORM].NamePs  = Shaders[PROGRAM_COLOR_UNIFORM].GetUniform( "u_PointSize" );
+
+	Shaders[PROGRAM_TEXTURE].NamePos  = Shaders[PROGRAM_TEXTURE].GetAttribute( "a_Position" );
+	Shaders[PROGRAM_TEXTURE].NameClr  = Shaders[PROGRAM_TEXTURE].GetAttribute( "a_Color" );
+	Shaders[PROGRAM_TEXTURE].NameTex0 = Shaders[PROGRAM_TEXTURE].GetAttribute( "a_Texcoord0" );
+	Shaders[PROGRAM_TEXTURE].NameMvp  = Shaders[PROGRAM_TEXTURE].GetUniform( "u_MVPMatrix" );
+	Shaders[PROGRAM_TEXTURE].NameSmp0 = Shaders[PROGRAM_TEXTURE].GetUniform( "u_Texture0" );
+
+	Shaders[PROGRAM_TEXTURE_UNIFORM].NamePos  = Shaders[PROGRAM_TEXTURE_UNIFORM].GetAttribute( "a_Position" );
+	Shaders[PROGRAM_TEXTURE_UNIFORM].NameTex0 = Shaders[PROGRAM_TEXTURE_UNIFORM].GetAttribute( "a_Texcoord0" );
+	Shaders[PROGRAM_TEXTURE_UNIFORM].NameClr  = Shaders[PROGRAM_TEXTURE_UNIFORM].GetUniform( "u_Color" );
+	Shaders[PROGRAM_TEXTURE_UNIFORM].NameMvp  = Shaders[PROGRAM_TEXTURE_UNIFORM].GetUniform( "u_MVPMatrix" );
+	Shaders[PROGRAM_TEXTURE_UNIFORM].NameSmp0 = Shaders[PROGRAM_TEXTURE_UNIFORM].GetUniform( "u_Texture0" );	
+
+	Shaders[PROGRAM_MULTITEXTURE].NamePos   = Shaders[PROGRAM_MULTITEXTURE].GetAttribute( "a_Position" );
+	Shaders[PROGRAM_MULTITEXTURE].NameClr   = Shaders[PROGRAM_MULTITEXTURE].GetAttribute( "a_Color" );
+	Shaders[PROGRAM_MULTITEXTURE].NameTex0  = Shaders[PROGRAM_MULTITEXTURE].GetAttribute( "a_Texcoord0" );
+	Shaders[PROGRAM_MULTITEXTURE].NameTex1  = Shaders[PROGRAM_MULTITEXTURE].GetAttribute( "a_Texcoord1" );
+	Shaders[PROGRAM_MULTITEXTURE].NameMvp   = Shaders[PROGRAM_MULTITEXTURE].GetUniform( "u_MVPMatrix" );
+	Shaders[PROGRAM_MULTITEXTURE].NameSmp0  = Shaders[PROGRAM_MULTITEXTURE].GetUniform( "u_Texture0" );
+	Shaders[PROGRAM_MULTITEXTURE].NameSmp1  = Shaders[PROGRAM_MULTITEXTURE].GetUniform( "u_Texture1" );
+	
+	check_opengl_errors( __FILE__, __LINE__ );
+	
+	return true;
+}
+
+void og12_use_shader( uint8_t program )
+{
+	// Check if the program is alreadt in use
+	if (ProgramCurrent != program) {
+	    Shaders[program].Use();
+	}
+	ProgramCurrent = program;
+}
+#endif /* OGL2 */
+
+void ogl_scale( GLfloat x, GLfloat y, GLfloat z )
+{
+    mat44f_t matrix;
+
+    cml::matrix_scale( matrix, x, y, z );
+
+    ModelView.back() *= matrix;
+}
+
+void ogl_translate( GLfloat x, GLfloat y, GLfloat z )
+{
+    mat44f_t matrix;
+
+    cml::matrix_translation( matrix, x, y, z );
+
+    ModelView.back() *= matrix;
+}
+
+int8_t check_opengl_errors( const string& file, uint16_t line )
+{
+    GLenum error;
+    string errortext;
+
+    error = glGetError();
+
+    if (error != GL_NO_ERROR)
+    {
+        switch (error)
+        {
+            case GL_INVALID_ENUM:                   errortext = "GL_INVALID_ENUM"; break;
+            case GL_INVALID_VALUE:                  errortext = "GL_INVALID_VALUE"; break;
+            case GL_INVALID_OPERATION:              errortext = "GL_INVALID_OPERATION"; break;
+#if defined(USE_GLES1) || defined(USE_GLFULL)
+            case GL_STACK_OVERFLOW:                 errortext = "GL_STACK_OVERFLOW"; break;
+            case GL_STACK_UNDERFLOW:                errortext = "GL_STACK_UNDERFLOW"; break;
+#endif
+#if defined(USE_GLES2) || defined(USE_GLFULL)
+            case GL_INVALID_FRAMEBUFFER_OPERATION:  errortext = "GL_INVALID_FRAMEBUFFER_OPERATION"; break;
+#endif
+            case GL_OUT_OF_MEMORY:                  errortext = "GL_OUT_OF_MEMORY"; break;
+            default:                                errortext = "unknown"; break;
+        }
+
+        printf( "ERROR: OpenGL Error detected in file %s at line %d: %s (0x%X)\n", file.c_str(), line, errortext.c_str(), error );
+
+        return 1;
+    }
+    return 0;
 }

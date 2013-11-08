@@ -52,34 +52,22 @@
 #include "playsave.h"
 #include "vers_id.h"
 #include "game.h"
-
-#if defined(__APPLE__) && defined(__MACH__)
-#include <OpenGL/glu.h>
-#else
-#ifdef OGLES
-#include <EGL/egl.h>
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
-#include <SDL_syswm.h>
-#else
-#include <GL/glu.h>
-#endif
+#if defined(OGL1) || defined(OGL2) 
+#include "ogl.h"
 #endif
 
 using std::max;
 
-#ifdef OGLES
-int sdl_video_flags = 0;
+GLuint ProgramCurrent = PROGRAM_NONE;
+glstate_t GLState;
+CShader Shaders[PROGRAM_TOTAL];
+//CBuffer Buffer[BUFFER_TOTAL];
+vector<mat44f_t>    ModelView;
+mat44f_t            Projection;
+mat44f_t            ProjPersp;
+mat44f_t            ProjOrtho;
 
-#ifdef RPI
-static EGL_DISPMANX_WINDOW_T nativewindow;
-static DISPMANX_ELEMENT_HANDLE_T dispman_element=DISPMANX_NO_HANDLE;
-static DISPMANX_DISPLAY_HANDLE_T dispman_display=DISPMANX_NO_HANDLE;
-#endif
-
-#else
 int sdl_video_flags = SDL_OPENGL;
-#endif
 int gr_installed = 0;
 int gl_initialized=0;
 int linedotscale=1; // scalar of glLinewidth and glPointSize - only calculated once when resolution changes
@@ -89,29 +77,7 @@ int sdl_no_modeswitch=0;
 enum { sdl_no_modeswitch = 0 };
 #endif
 
-#ifdef OGLES
-EGLDisplay eglDisplay=EGL_NO_DISPLAY;
-EGLConfig eglConfig;
-EGLSurface eglSurface=EGL_NO_SURFACE;
-EGLContext eglContext=EGL_NO_CONTEXT;
-
-bool TestEGLError(char* pszLocation)
-{
-	/*
-	 * eglGetError returns the last error that has happened using egl,
-	 * not the status of the last called function. The user has to
-	 * check after every single egl call or at least once every frame.
-	*/
-	EGLint iErr = eglGetError();
-	if (iErr != EGL_SUCCESS)
-	{
-		con_printf(CON_URGENT, "%s failed (%d).\n", pszLocation, iErr);
-		return 0;
-	}
-	
-	return 1;
-}
-#endif
+void ogl_get_verinfo(void);
 
 void ogl_swap_buffers_internal(void)
 {
@@ -122,199 +88,10 @@ void ogl_swap_buffers_internal(void)
 #endif
 }
 
-#ifdef RPI
-
-// MH: I got the following constants for vc_dispmanx_element_change_attributes() from:
-//     http://qt.gitorious.org/qt/qtbase/commit/5933205cfcd73481cb0645fa6183103063fe3e0d
-//     I do not know where they got them from, but OTOH, they are quite obvious.
-
-// these constants are not in any headers (yet)
-#define ELEMENT_CHANGE_LAYER          (1<<0)
-#define ELEMENT_CHANGE_OPACITY        (1<<1)
-#define ELEMENT_CHANGE_DEST_RECT      (1<<2)
-#define ELEMENT_CHANGE_SRC_RECT       (1<<3)
-#define ELEMENT_CHANGE_MASK_RESOURCE  (1<<4)
-#define ELEMENT_CHANGE_TRANSFORM      (1<<5)
-
-void rpi_destroy_element(void)
-{
-	if (dispman_element != DISPMANX_NO_HANDLE) {
-		DISPMANX_UPDATE_HANDLE_T dispman_update;
-		con_printf(CON_DEBUG, "RPi: destroying display manager element\n");
-		dispman_update = vc_dispmanx_update_start( 0 );
-		if (vc_dispmanx_element_remove( dispman_update, dispman_element)) {
-			 con_printf(CON_URGENT, "RPi: failed to remove dispmanx element!\n");
-		}
-		vc_dispmanx_update_submit_sync( dispman_update );
-		dispman_element = DISPMANX_NO_HANDLE;
-	}
-}
-
-int rpi_setup_element(int x, int y, Uint32 video_flags, int update)
-{
-	// this code is based on the work of Ben O'Steen
-	// http://benosteen.wordpress.com/2012/04/27/using-opengl-es-2-0-on-the-raspberry-pi-without-x-windows/
-	// https://github.com/benosteen/opengles-book-samples/tree/master/Raspi
-	DISPMANX_UPDATE_HANDLE_T dispman_update;
-	VC_RECT_T dst_rect;
-	VC_RECT_T src_rect;
-	VC_DISPMANX_ALPHA_T alpha_descriptor;
-
-	uint32_t rpi_display_device=DISPMANX_ID_MAIN_LCD;
-	uint32_t display_width;
-	uint32_t display_height;
-	int success;
-
-	success = graphics_get_display_size(rpi_display_device, &display_width, &display_height);
-	if ( success < 0 ) {
-		con_printf(CON_URGENT, "Could not get RPi display size, assuming 640x480\n");
-		display_width=640;
-		display_height=480;
-	}
-
-	if ((uint32_t)x > display_width) {
-		con_printf(CON_URGENT, "RPi: Requested width %d exceeds display width %u, scaling down!\n",
-			x,display_width);
-		x=(int)display_width;
-	}
-	if ((uint32_t)y > display_height) {
-		con_printf(CON_URGENT, "RPi: Requested height %d exceeds display height %u, scaling down!\n",
-			y,display_height);
-		y=(int)display_height;
-	}
-
-	con_printf(CON_DEBUG, "RPi: display resolution %ux%u, game resolution: %dx%d (%s)\n", display_width, display_height, x, y, (video_flags & SDL_FULLSCREEN)?"fullscreen":"windowed");
-	if (video_flags & SDL_FULLSCREEN) {
-		/* scale to the full display size... */
-		dst_rect.x = 0;
-		dst_rect.y = 0;
-		dst_rect.width = display_width;
-		dst_rect.height= display_height;
-	} else {
-		/* TODO: we could query the position of the X11 window here
-		   and try to place the ovelray exactly above that...,
-		   we would have to track window movements, though ... */
-		dst_rect.x = 0;
-		dst_rect.y = 0;
-		dst_rect.width = (uint32_t)x;
-		dst_rect.height= (uint32_t)y;
-	}
-
-	src_rect.x = 0;
-	src_rect.y = 0;
-	src_rect.width = ((uint32_t)x)<< 16;
-	src_rect.height =((uint32_t)y)<< 16;
-
-	/* we do not want our overlay to be blended against the background */
-	alpha_descriptor.flags=DISPMANX_FLAGS_ALPHA_FIXED_ALL_PIXELS;
-	alpha_descriptor.opacity=0xffffffff;
-	alpha_descriptor.mask=0;
-
-	// open display, if we do not already have one ...
-	if (dispman_display == DISPMANX_NO_HANDLE) {
-		con_printf(CON_DEBUG, "RPi: opening display: %u\n",rpi_display_device);
-		dispman_display = vc_dispmanx_display_open(rpi_display_device);
-		if (dispman_display == DISPMANX_NO_HANDLE) {
-			con_printf(CON_URGENT,"RPi: failed to open display: %u\n",rpi_display_device);
-		}
-	}
-
-	if (dispman_element != DISPMANX_NO_HANDLE) {
-		if (!update) {
-			// if the element already exists, and we cannot update it, so recreate it
-			rpi_destroy_element();
-		}
-	} else {
-		// if the element does not exist, we cannot do an update
-		update=0;
-	}
-
-	dispman_update = vc_dispmanx_update_start( 0 );
-
-	if (update) {
-		con_printf(CON_DEBUG, "RPi: updating display manager element\n");
-		vc_dispmanx_element_change_attributes ( dispman_update, nativewindow.element,
-							ELEMENT_CHANGE_DEST_RECT | ELEMENT_CHANGE_SRC_RECT,
-							0 /*layer*/, 0 /*opacity*/,
-							&dst_rect, &src_rect,
-							0 /*mask*/, VC_IMAGE_ROT0 /*transform*/);
-	} else {
-		// create a new element
-		con_printf(CON_DEBUG, "RPi: creating display manager element\n");
-		dispman_element = vc_dispmanx_element_add ( dispman_update, dispman_display,
-								0 /*layer*/, &dst_rect, 0 /*src*/,
-								&src_rect, DISPMANX_PROTECTION_NONE,
-								&alpha_descriptor, NULL /*clamp*/,
-								VC_IMAGE_ROT0 /*transform*/);
-		if (dispman_element == DISPMANX_NO_HANDLE) {
-			con_printf(CON_URGENT,"RPi: failed to creat display manager elemenr\n");
-		}
-		nativewindow.element = dispman_element;
-	}
-	nativewindow.width = display_width;
-	nativewindow.height = display_height;
-	vc_dispmanx_update_submit_sync( dispman_update );
-
-	return 0;
-}
-
-#endif // RPI
-
-#ifdef OGLES
-void ogles_destroy(void)
-{
-	if( eglDisplay != EGL_NO_DISPLAY ) {
-		eglMakeCurrent(eglDisplay, NULL, NULL, EGL_NO_CONTEXT);
-	}
-
-	if (eglContext != EGL_NO_CONTEXT) {
-		con_printf(CON_DEBUG, "EGL: destroyig context\n");
-		eglDestroyContext(eglDisplay, eglContext);
-		eglContext = EGL_NO_CONTEXT;
-	}
-
-	if (eglSurface != EGL_NO_SURFACE) {
-		con_printf(CON_DEBUG, "EGL: destroyig surface\n");
-		eglDestroySurface(eglDisplay, eglSurface);
-		eglSurface = EGL_NO_SURFACE;
-	}
-
-	if (eglDisplay != EGL_NO_DISPLAY) {
-		con_printf(CON_DEBUG, "EGL: terminating\n");
-		eglTerminate(eglDisplay);
-		eglDisplay = EGL_NO_DISPLAY;
-	}
-}
-#endif
-
 int ogl_init_window(int x, int y)
 {
 	int use_x,use_y,use_bpp;
 	Uint32 use_flags;
-
-#ifdef OGLES
-	SDL_SysWMinfo info;
-	Window    x11Window = 0;
-	Display*  x11Display = 0;
-	EGLint    ver_maj, ver_min;
-	EGLint configAttribs[] =
-	{
-		EGL_RED_SIZE, 5,
-		EGL_GREEN_SIZE, 6,
-		EGL_BLUE_SIZE, 5,
-		EGL_DEPTH_SIZE, 16,
-		EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-		EGL_RENDERABLE_TYPE, EGL_OPENGL_ES_BIT,
-		EGL_NONE, EGL_NONE
-	};
-
-	// explicitely request an OpenGL ES 1.x context
-        EGLint contextAttribs[] = { EGL_CONTEXT_CLIENT_VERSION, 1, EGL_NONE, EGL_NONE };
-	// explicitely request a doublebuffering window
-        EGLint winAttribs[] = { EGL_RENDER_BUFFER, EGL_BACK_BUFFER, EGL_NONE, EGL_NONE };
-
-	int iConfigs;
-#endif // OGLES
 
 	if (gl_initialized)
 		ogl_smash_texture_list_internal();//if we are or were fullscreen, changing vid mode will invalidate current textures
@@ -328,7 +105,7 @@ int ogl_init_window(int x, int y)
 	use_flags=sdl_video_flags;
 	if (sdl_no_modeswitch) {
 		const SDL_VideoInfo *vinfo=SDL_GetVideoInfo();
-		if (vinfo) {	
+		if (vinfo) {
 			use_x=vinfo->current_w;
 			use_y=vinfo->current_h;
 			use_bpp=vinfo->vfmt->BitsPerPixel;
@@ -349,80 +126,7 @@ int ogl_init_window(int x, int y)
 	}
 
 #ifdef OGLES
-#ifndef RPI
-	// NOTE: on the RPi, the EGL stuff is not connected to the X11 window,
-	//       so there is no need to destroy and recreate this
-	ogles_destroy();
-#endif
-
-	SDL_VERSION(&info.version);
-	
-	if (SDL_GetWMInfo(&info) > 0) {
-		if (info.subsystem == SDL_SYSWM_X11) {
-			x11Display = info.info.x11.display;
-			x11Window = info.info.x11.window;
-			con_printf (CON_DEBUG, "Display: %p, Window: %i ===\n", (void*)x11Display, (int)x11Window);
-		}
-	}
-
-	if (eglDisplay == EGL_NO_DISPLAY) {
-#ifdef RPI
-		eglDisplay = eglGetDisplay((EGLNativeDisplayType)EGL_DEFAULT_DISPLAY);
-#else
-		eglDisplay = eglGetDisplay((EGLNativeDisplayType)x11Display);
-#endif
-		if (eglDisplay == EGL_NO_DISPLAY) {
-			con_printf(CON_URGENT, "EGL: Error querying EGL Display\n");
-		}
-
-		if (!eglInitialize(eglDisplay, &ver_maj, &ver_min)) {
-			con_printf(CON_URGENT, "EGL: Error initializing EGL\n");
-		} else {
-			con_printf(CON_DEBUG, "EGL: Initialized, version: major %i minor %i\n", ver_maj, ver_min);
-		}
-	}
-
-	
-#ifdef RPI
-	if (rpi_setup_element(x,y,sdl_video_flags,1)) {
-		Error("RPi: Could not set up a %dx%d element\n", x, y);
-	}
-#endif
-
-	if (eglSurface == EGL_NO_SURFACE) {
-		if (!eglChooseConfig(eglDisplay, configAttribs, &eglConfig, 1, &iConfigs) || (iConfigs != 1)) {
-			con_printf(CON_URGENT, "EGL: Error choosing config\n");
-		} else {
-			con_printf(CON_DEBUG, "EGL: config chosen\n");
-		}
-
-#ifdef RPI
-		eglSurface = eglCreateWindowSurface(eglDisplay, eglConfig, (EGLNativeWindowType)&nativewindow, winAttribs);
-#else
-		eglSurface = eglCreateWindowSurface(eglDisplay, eglConfig, (NativeWindowType)x11Window, winAttribs);
-#endif
-		if ((!TestEGLError("eglCreateWindowSurface")) || eglSurface == EGL_NO_SURFACE) {
-			con_printf(CON_URGENT, "EGL: Error creating window surface\n");
-		} else {
-			con_printf(CON_DEBUG, "EGL: Created window surface\n");
-		}
-	}
-	
-	if (eglContext == EGL_NO_CONTEXT) {
-		eglContext = eglCreateContext(eglDisplay, eglConfig, EGL_NO_CONTEXT, contextAttribs);
-		if ((!TestEGLError("eglCreateContext")) || eglContext == EGL_NO_CONTEXT) {
-			con_printf(CON_URGENT, "EGL: Error creating context\n");
-		} else {
-			con_printf(CON_DEBUG, "EGL: Created context\n");
-		}
-	}
-	
-	eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext);
-	if (!TestEGLError("eglMakeCurrent")) {
-		con_printf(CON_URGENT, "EGL: Error making current\n");
-	} else {
-		con_printf(CON_DEBUG, "EGL: made context current\n");
-	}
+	EGL_Open();
 #endif
 
 	linedotscale = ((x/640<y/480?x/640:y/480)<1?1:(x/640<y/480?x/640:y/480));
@@ -468,15 +172,15 @@ int gr_toggle_fullscreen(void)
 
 	if (gl_initialized) // update viewing values for menus
 	{
-		glMatrixMode(GL_PROJECTION);
-		glLoadIdentity();
-#ifdef OGLES
-		glOrthof(0.0, 1.0, 0.0, 1.0, -1.0, 1.0);
-#else
- 		glOrtho(0.0, 1.0, 0.0, 1.0, -1.0, 1.0);
+#if defined(OGL1)
+	glMatrixMode( GL_PROJECTION );
+	glLoadMatrixf( ProjOrtho.data() );
 #endif
-		glMatrixMode(GL_MODELVIEW);
-		glLoadIdentity();//clear matrix
+#if defined(OGL2)    
+        Projection = ProjOrtho;
+#endif		
+        ModelView.back() = cml::identity_4x4();
+
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		ogl_smash_texture_list_internal();//if we are or were fullscreen, changing vid mode will invalidate current textures
@@ -487,19 +191,49 @@ int gr_toggle_fullscreen(void)
 
 static void ogl_init_state(void)
 {
+#if defined(OGL2)
+	ogl2_shader_compile();
+#endif
+	
+	GLState.mode = 0;
+	GLState.view = 0;
+	GLState.count = 0;
+	GLState.stride = 0;
+	GLState.pointsize = 1.0f;
+	GLState.tex[0] = -1;
+	GLState.tex[1] = -1;
+	GLState.texwrap[0] = GL_CLAMP_TO_EDGE; 
+	GLState.texwrap[1] = GL_CLAMP_TO_EDGE; 
+	GLState.v_pos = NULL;
+	GLState.v_clr = NULL;
+	GLState.v_tex[0] = NULL;
+	GLState.v_tex[1] = NULL;
+	
 	/* select clearing (background) color   */
-	glClearColor(0.0, 0.0, 0.0, 0.0);
+	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 
 	/* initialize viewing values */
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-#ifdef OGLES
-	glOrthof(0.0, 1.0, 0.0, 1.0, -1.0, 1.0);
-#else
- 	glOrtho(0.0, 1.0, 0.0, 1.0, -1.0, 1.0);
+	/* parameters: matrix, xfov, aspect, near, far, z_clip */
+	cml::matrix_perspective_xfov_RH( ProjPersp,
+				    cml::rad(90.0f), 1.0f,
+				    0.1f, 5000.0f, cml::z_clip_neg_one );
+
+	/* parameters: matrix, left, right, bottom, top, near, far, z_clip */
+	cml::matrix_orthographic_RH( ProjOrtho,
+				    0.0f, 1.0f,
+				    0.0f, 1.0f,
+				    -1.0f, 1.0f, cml::z_clip_neg_one );
+
+#if defined(OGL1)
+	glMatrixMode( GL_PROJECTION );
+	glLoadMatrixf( ProjOrtho.data() );
 #endif
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();//clear matrix
+#if defined(OGL2)    
+        Projection = ProjOrtho;
+#endif		
+
+	ModelView.push_back( cml::identity_4x4() );
+
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	gr_palette_step_up(0,0,0);//in case its left over from in game
@@ -507,55 +241,24 @@ static void ogl_init_state(void)
 	ogl_init_pixel_buffers(grd_curscreen->sc_w, grd_curscreen->sc_h);
 }
 
-// Set the buffer to draw to. 0 is front, 1 is back
-void gr_set_draw_buffer(int buf)
-{
-#ifndef OGLES
-	glDrawBuffer((buf == 0) ? GL_FRONT : GL_BACK);
-#endif
-}
+const char *gl_vendor, *gl_renderer, *gl_version, *gl_extensions, *gl_shaderversion;
+int max_texture_units;
 
-const char *gl_vendor, *gl_renderer, *gl_version, *gl_extensions;
-
-static void ogl_get_verinfo(void)
+void ogl_get_verinfo(void)
 {
-#ifndef OGLES
 	gl_vendor = (const char *) glGetString (GL_VENDOR);
 	gl_renderer = (const char *) glGetString (GL_RENDERER);
 	gl_version = (const char *) glGetString (GL_VERSION);
 	gl_extensions = (const char *) glGetString (GL_EXTENSIONS);
-
 	con_printf(CON_VERBOSE, "OpenGL: vendor: %s\nOpenGL: renderer: %s\nOpenGL: version: %s\n",gl_vendor,gl_renderer,gl_version);
+	
+	glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &max_texture_units);
+	con_printf(CON_VERBOSE, "OpenGL: max texture units: %d\n",max_texture_units);	
+#if defined(OGL2)
+	gl_shaderversion = (const char *) glGetString( GL_SHADING_LANGUAGE_VERSION );
+	con_printf(CON_VERBOSE, "OpenGL: shader version: %s\n",gl_shaderversion);
+#endif	
 
-#ifdef _WIN32
-	dglMultiTexCoord2fARB = (glMultiTexCoord2fARB_fp)wglGetProcAddress("glMultiTexCoord2fARB");
-	dglActiveTextureARB = (glActiveTextureARB_fp)wglGetProcAddress("glActiveTextureARB");
-	dglMultiTexCoord2fSGIS = (glMultiTexCoord2fSGIS_fp)wglGetProcAddress("glMultiTexCoord2fSGIS");
-	dglSelectTextureSGIS = (glSelectTextureSGIS_fp)wglGetProcAddress("glSelectTextureSGIS");
-#endif
-
-	//add driver specific hacks here.  whee.
-	if ((d_stricmp(gl_renderer,"Mesa NVIDIA RIVA 1.0\n")==0 || d_stricmp(gl_renderer,"Mesa NVIDIA RIVA 1.2\n")==0) && d_stricmp(gl_version,"1.2 Mesa 3.0")==0)
-	{
-		GameArg.DbgGlIntensity4Ok=0;//ignores alpha, always black background instead of transparent.
-		GameArg.DbgGlReadPixelsOk=0;//either just returns all black, or kills the X server entirely
-		GameArg.DbgGlGetTexLevelParamOk=0;//returns random data..
-	}
-	if (d_stricmp(gl_vendor,"Matrox Graphics Inc.")==0)
-	{
-		//displays garbage. reported by
-		//  redomen@crcwnet.com (render="Matrox G400" version="1.1.3 5.52.015")
-		//  orulz (Matrox G200)
-		GameArg.DbgGlIntensity4Ok=0;
-	}
-#ifdef macintosh
-	if (d_stricmp(gl_renderer,"3dfx Voodoo 3")==0) // strangely, includes Voodoo 2
-		GameArg.DbgGlGetTexLevelParamOk=0; // Always returns 0
-#endif
-
-#ifndef NDEBUG
-	con_printf(CON_VERBOSE,"gl_intensity4:%i gl_luminance4_alpha4:%i gl_rgba2:%i gl_readpixels:%i gl_gettexlevelparam:%i\n",GameArg.DbgGlIntensity4Ok,GameArg.DbgGlLuminance4Alpha4Ok,GameArg.DbgGlRGBA2Ok,GameArg.DbgGlReadPixelsOk,GameArg.DbgGlGetTexLevelParamOk);
-#endif
 	if (!d_stricmp(gl_extensions,"GL_EXT_texture_filter_anisotropic")==0)
 	{
 		glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &ogl_maxanisotropy);
@@ -563,7 +266,6 @@ static void ogl_get_verinfo(void)
 	}
 	else if (GameCfg.TexFilt >= 3)
 		GameCfg.TexFilt = 2;
-#endif
 }
 
 // returns possible (fullscreen) resolutions if any.
@@ -723,31 +425,11 @@ void gr_set_attributes(void)
 
 int gr_init(int mode)
 {
-#ifdef RPI
-	char sdl_driver[32];
-	char *sdl_driver_ret;
-#endif
-
-	int retcode;
+    int retcode;
 
 	// Only do this function once!
 	if (gr_installed==1)
 		return -1;
-
-#ifdef RPI
-	// Initialize the broadcom host library
-	// we have to call this before we can create an OpenGL ES context
-	bcm_host_init();
-
-	// Check if we are running with SDL directfb driver ...
-	sdl_driver_ret=SDL_VideoDriverName(sdl_driver,32);
-	if (sdl_driver_ret) {
-		if (strcmp(sdl_driver_ret,"x11")) {
-			con_printf(CON_URGENT,"RPi: activating hack for console driver\n");
-			sdl_no_modeswitch=1;
-		}
-	}
-#endif
 
 #ifdef _WIN32
 	ogl_init_load_library();
@@ -804,141 +486,111 @@ void gr_close()
 	ogl_close_pixel_buffers();
 #ifdef _WIN32
 	if (ogl_rt_loaded)
-		OpenGL_LoadLibrary(false, OglLibPath);
+		OpenGL_LoadLibrary(false);
+#endif
+
+#if defined(OGL2)
+	Shaders[PROGRAM_COLOR].Close();
+	Shaders[PROGRAM_COLOR_UNIFORM].Close();
+	Shaders[PROGRAM_TEXTURE].Close();
+	Shaders[PROGRAM_TEXTURE_UNIFORM].Close();
+	Shaders[PROGRAM_MULTITEXTURE].Close();
 #endif
 
 #ifdef OGLES
-	ogles_destroy();
-#ifdef RPI
-	con_printf(CON_DEBUG, "RPi: cleanuing up\n");
-	if (dispman_display != DISPMANX_NO_HANDLE) {
-		rpi_destroy_element();
-		con_printf(CON_DEBUG, "RPi: closing display\n");
-		vc_dispmanx_display_close(dispman_display);
-		dispman_display = DISPMANX_NO_HANDLE;
-	}
-#endif
+	EGL_Close();
 #endif
 }
 
 void ogl_upixelc(int x, int y, int c)
 {
-	GLfloat vertex_array[] = {
-		static_cast<GLfloat>((x+grd_curcanv->cv_bitmap.bm_x)/(float)last_width),
-		static_cast<GLfloat>(1.0-(y+grd_curcanv->cv_bitmap.bm_y)/(float)last_height)
-	};
-	GLfloat color_array[] = {
-		static_cast<GLfloat>(CPAL2Tr(c)), static_cast<GLfloat>(CPAL2Tg(c)), static_cast<GLfloat>(CPAL2Tb(c)), 1.0,
-		static_cast<GLfloat>(CPAL2Tr(c)), static_cast<GLfloat>(CPAL2Tg(c)), static_cast<GLfloat>(CPAL2Tb(c)), 1.0,
-		static_cast<GLfloat>(CPAL2Tr(c)), static_cast<GLfloat>(CPAL2Tg(c)), static_cast<GLfloat>(CPAL2Tb(c)), 1.0,
-		static_cast<GLfloat>(CPAL2Tr(c)), static_cast<GLfloat>(CPAL2Tg(c)), static_cast<GLfloat>(CPAL2Tb(c)), 1.0
-	};
+    vec2f_t v[2];
 
-	r_upixelc++;
-	OGL_DISABLE(TEXTURE_2D);
-	glPointSize(linedotscale);
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glEnableClientState(GL_COLOR_ARRAY);
-	glVertexPointer(2, GL_FLOAT, 0, vertex_array);
-	glColorPointer(4, GL_FLOAT, 0, color_array);
-	glDrawArrays(GL_POINTS, 0, 1);
-	glDisableClientState(GL_VERTEX_ARRAY);
-	glDisableClientState(GL_COLOR_ARRAY);
+    /* Setup vertex array */
+    v[0][0] = (x+grd_curcanv->cv_bitmap.bm_x)/(float)last_width;
+    v[0][1] = 1.0-(y+grd_curcanv->cv_bitmap.bm_y)/(float)last_height;
+    
+    GLState.color4f[0] = CPAL2Tr(c);
+    GLState.color4f[1] = CPAL2Tg(c);
+    GLState.color4f[2] = CPAL2Tb(c);
+    GLState.color4f[3] = 1.0f;
+    
+    GLState.mode = GL_POINTS;
+    GLState.view = POSITION_XY;
+    GLState.count = 1;
+    GLState.stride = 0;
+    GLState.pointsize = linedotscale;
+    GLState.v_pos = &v[0][0];
+
+    ogl_draw_arrays( GLState );
 }
 
 unsigned char ogl_ugpixel( grs_bitmap * bitmap, int x, int y )
 {
-	GLint gl_draw_buffer;
 	ubyte buf[4];
 
-#ifndef OGLES
-	glGetIntegerv(GL_DRAW_BUFFER, &gl_draw_buffer);
-	glReadBuffer(gl_draw_buffer);
-#endif
-
 	glReadPixels(bitmap->bm_x + x, SHEIGHT - bitmap->bm_y - y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, buf);
-	
+
 	return gr_find_closest_color(buf[0]/4, buf[1]/4, buf[2]/4);
 }
 
 void ogl_urect(int left,int top,int right,int bot)
 {
-	GLfloat xo, yo, xf, yf, color_r, color_g, color_b, color_a;
-	GLfloat color_array[] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
-	GLfloat vertex_array[] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
-	int c=COLOR;
+    vec2f_t v[4];
+    GLfloat xo, yo, xf, yf, color_a;
 
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glEnableClientState(GL_COLOR_ARRAY);
+    /* Setup vertex array */
+    xo = (left+grd_curcanv->cv_bitmap.bm_x)/(float)last_width;
+    xf = (right + 1 + grd_curcanv->cv_bitmap.bm_x) / (float)last_width;
+    yo = 1.0-(top+grd_curcanv->cv_bitmap.bm_y)/(float)last_height;
+    yf = 1.0 - (bot + 1 + grd_curcanv->cv_bitmap.bm_y) / (float)last_height;
 
-	xo=(left+grd_curcanv->cv_bitmap.bm_x)/(float)last_width;
-	xf = (right + 1 + grd_curcanv->cv_bitmap.bm_x) / (float)last_width;
-	yo=1.0-(top+grd_curcanv->cv_bitmap.bm_y)/(float)last_height;
-	yf = 1.0 - (bot + 1 + grd_curcanv->cv_bitmap.bm_y) / (float)last_height;
+    if (grd_curcanv->cv_fade_level >= GR_FADE_OFF)
+	    color_a = 1.0f;
+    else
+	    color_a = 1.0f - (float)grd_curcanv->cv_fade_level / ((float)GR_FADE_LEVELS - 1.0f);
 
-	OGL_DISABLE(TEXTURE_2D);
+    GLState.color4f[0] = CPAL2Tr(COLOR);
+    GLState.color4f[1] = CPAL2Tg(COLOR);
+    GLState.color4f[2] = CPAL2Tb(COLOR);
+    GLState.color4f[3] = color_a;
 
-	color_r = CPAL2Tr(c);
-	color_g = CPAL2Tg(c);
-	color_b = CPAL2Tb(c);
+    v[0][0] = v[1][0] = xo;
+    v[0][1] = v[3][1] = yo;
+    v[1][1] = v[2][1] = yf;
+    v[2][0] = v[3][0] = xf;
+    
+    GLState.mode = GL_TRIANGLE_FAN;
+    GLState.view = POSITION_XY;
+    GLState.count = 4;
+    GLState.stride = 0;
+    GLState.v_pos = &v[0][0];
 
-	if (grd_curcanv->cv_fade_level >= GR_FADE_OFF)
-		color_a = 1.0;
-	else
-		color_a = 1.0 - (float)grd_curcanv->cv_fade_level / ((float)GR_FADE_LEVELS - 1.0);
-
-	color_array[0] = color_array[4] = color_array[8] = color_array[12] = color_r;
-	color_array[1] = color_array[5] = color_array[9] = color_array[13] = color_g;
-	color_array[2] = color_array[6] = color_array[10] = color_array[14] = color_b;
-	color_array[3] = color_array[7] = color_array[11] = color_array[15] = color_a;
-
-	vertex_array[0] = xo;
-	vertex_array[1] = yo;
-	vertex_array[2] = xo;
-	vertex_array[3] = yf;
-	vertex_array[4] = xf;
-	vertex_array[5] = yf;
-	vertex_array[6] = xf;
-	vertex_array[7] = yo;
-	
-	glVertexPointer(2, GL_FLOAT, 0, vertex_array);
-	glColorPointer(4, GL_FLOAT, 0, color_array);
-	glDrawArrays(GL_TRIANGLE_FAN, 0, 4);//replaced GL_QUADS
-	glDisableClientState(GL_VERTEX_ARRAY);
+    ogl_draw_arrays( GLState );
 }
 
 void ogl_ulinec(int left,int top,int right,int bot,int c)
 {
-	GLfloat xo,yo,xf,yf;
-	GLfloat fade_alpha = (grd_curcanv->cv_fade_level >= GR_FADE_OFF)?1.0:1.0 - (float)grd_curcanv->cv_fade_level / ((float)GR_FADE_LEVELS - 1.0);
-	GLfloat color_array[] = {
-		static_cast<GLfloat>(CPAL2Tr(c)), static_cast<GLfloat>(CPAL2Tg(c)), static_cast<GLfloat>(CPAL2Tb(c)), fade_alpha,
-		static_cast<GLfloat>(CPAL2Tr(c)), static_cast<GLfloat>(CPAL2Tg(c)), static_cast<GLfloat>(CPAL2Tb(c)), fade_alpha,
-		static_cast<GLfloat>(CPAL2Tr(c)), static_cast<GLfloat>(CPAL2Tg(c)), static_cast<GLfloat>(CPAL2Tb(c)), 1.0,
-		static_cast<GLfloat>(CPAL2Tr(c)), static_cast<GLfloat>(CPAL2Tg(c)), static_cast<GLfloat>(CPAL2Tb(c)), fade_alpha
-	};
-	GLfloat vertex_array[] = { 0.0, 0.0, 0.0, 0.0 };
+    vec2f_t v[2];
 
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glEnableClientState(GL_COLOR_ARRAY);
-	
-	xo = (left + grd_curcanv->cv_bitmap.bm_x + 0.5) / (float)last_width;
-	xf = (right + grd_curcanv->cv_bitmap.bm_x + 1.0) / (float)last_width;
-	yo = 1.0 - (top + grd_curcanv->cv_bitmap.bm_y + 0.5) / (float)last_height;
-	yf = 1.0 - (bot + grd_curcanv->cv_bitmap.bm_y + 1.0) / (float)last_height;
- 
-	OGL_DISABLE(TEXTURE_2D);
+    /* Setup vertex array */
+    v[0][0] = (left + grd_curcanv->cv_bitmap.bm_x + 0.5) / (float)last_width;
+    v[0][1] = 1.0 - (top + grd_curcanv->cv_bitmap.bm_y + 0.5) / (float)last_height;
+    v[1][0] = (right + grd_curcanv->cv_bitmap.bm_x + 1.0) / (float)last_width;
+    v[1][1] = 1.0 - (bot + grd_curcanv->cv_bitmap.bm_y + 1.0) / (float)last_height;
 
-	vertex_array[0] = xo;
-	vertex_array[1] = yo;
-	vertex_array[2] = xf;
-	vertex_array[3] = yf;
+    GLState.color4f[0] = CPAL2Tr(c);
+    GLState.color4f[1] = CPAL2Tg(c);
+    GLState.color4f[2] = CPAL2Tb(c);
+    GLState.color4f[3] = (grd_curcanv->cv_fade_level >= GR_FADE_OFF)?1.0:1.0 - (float)grd_curcanv->cv_fade_level / ((float)GR_FADE_LEVELS - 1.0);
 
-	glVertexPointer(2, GL_FLOAT, 0, vertex_array);
-	glColorPointer(4, GL_FLOAT, 0, color_array);
-	glDrawArrays(GL_LINES, 0, 2);
-	glDisableClientState(GL_VERTEX_ARRAY);
-	glDisableClientState(GL_COLOR_ARRAY);
+    GLState.mode = GL_LINES;
+    GLState.view = POSITION_XY;
+    GLState.count = 2;
+    GLState.stride = 0;
+    GLState.v_pos = &v[0][0];
+    
+    ogl_draw_arrays( GLState );
 }
 
 GLfloat last_r=0, last_g=0, last_b=0;
@@ -946,27 +598,34 @@ int do_pal_step=0;
 
 void ogl_do_palfx(void)
 {
-	GLfloat color_array[] = { last_r, last_g, last_b, 1.0, last_r, last_g, last_b, 1.0, last_r, last_g, last_b, 1.0, last_r, last_g, last_b, 1.0 };
-	GLfloat vertex_array[] = { 0,0,0,1,1,1,1,0 };
+    vec2f_t v[4];
 
-	OGL_DISABLE(TEXTURE_2D);
+    /* Setup vertex array */
+    GLState.color4f[0] = last_r;
+    GLState.color4f[1] = last_g;
+    GLState.color4f[2] = last_b;
+    GLState.color4f[3] = 1.0;
 
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glEnableClientState(GL_COLOR_ARRAY);
- 
-	if (do_pal_step)
-	{
-		glEnable(GL_BLEND);
-		glBlendFunc(GL_ONE,GL_ONE);
-	}
-	else
-		return;
- 
-	glVertexPointer(2, GL_FLOAT, 0, vertex_array);
-	glColorPointer(4, GL_FLOAT, 0, color_array);
-	glDrawArrays(GL_TRIANGLE_FAN, 0, 4);//replaced GL_QUADS
-	glDisableClientState(GL_VERTEX_ARRAY);
-	glDisableClientState(GL_COLOR_ARRAY);
+    v[0][0] = v[1][0] = 0;
+    v[0][1] = v[3][1] = 0;
+    v[1][1] = v[2][1] = 1;
+    v[2][0] = v[3][0] = 1;
+
+    if (do_pal_step)
+    {
+	    glEnable(GL_BLEND);
+	    glBlendFunc(GL_ONE,GL_ONE);
+    }
+    else
+	    return;
+	
+    GLState.mode = GL_TRIANGLE_FAN;
+    GLState.view = POSITION_XY;
+    GLState.count = 4;
+    GLState.stride = 0;
+    GLState.v_pos = &v[0][0];
+	
+    ogl_draw_arrays( GLState );
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
@@ -1027,8 +686,6 @@ void gr_palette_read(ubyte * pal)
 			pal[i] = 63;
 	}
 }
-
-#define GL_BGR_EXT 0x80E0
 
 typedef struct
 {
@@ -1117,10 +774,6 @@ void save_screen_shot(int automap_flag)
 
 	if (!automap_flag)
 		HUD_init_message(HM_DEFAULT, "%s 'scrn%04d.tga'", TXT_DUMPING_SCREEN, savenum-1 );
-
-#ifndef OGLES
-	glReadBuffer(GL_FRONT);
-#endif
 
 	MALLOC(buf, unsigned char, grd_curscreen->sc_w*grd_curscreen->sc_h*3);
 	write_bmp(savename,grd_curscreen->sc_w,grd_curscreen->sc_h,buf);

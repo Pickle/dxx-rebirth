@@ -24,6 +24,7 @@
 #  include <GLES/gl.h>
 #  else
 #  include <GL/gl.h>
+#  include <GL/glext.h>
 #  endif
 # endif
 # ifndef GL_CLAMP_TO_EDGE	// hack for Mac OS 9, others?

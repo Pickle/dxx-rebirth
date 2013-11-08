@@ -16,6 +16,7 @@
 #endif
 
 #include <GL/gl.h>
+#include <GL/glext.h>
 #include "pstypes.h"
 
 //gl extensions.
@@ -471,6 +472,40 @@
 #define glCombinerOutputNV dglCombinerOutputNV
 #define glFinalCombinerInputNV dglFinalCombinerInputNV
 
+#if defined(OGL2)
+#define glGenerateMipmap dglGenerateMipmap
+#define glGenBuffers dglGenBuffers
+#define glDeleteBuffers dglDeleteBuffers
+#define glBufferData dglBufferData
+#define glBindBuffer dglBindBuffer
+#define glBufferSubData dglBufferSubData
+#define glDeleteShader dglDeleteShader
+#define glDeleteProgram dglDeleteProgram
+#define glUseProgram dglUseProgram
+#define glCreateShader dglCreateShader
+#define glShaderSource dglShaderSource
+#define glCompileShader dglCompileShader
+#define glGetShaderiv dglGetShaderiv
+#define glCreateProgram dglCreateProgram
+#define glAttachShader dglAttachShader
+#define glLinkProgram dglLinkProgram
+#define glGetProgramiv dglGetProgramiv
+#define glGetActiveAttrib dglGetActiveAttrib
+#define glGetAttribLocation dglGetAttribLocation
+#define glGetActiveUniform dglGetActiveUniform
+#define glGetUniformLocation dglGetUniformLocation
+#define glGetShaderInfoLog dglGetShaderInfoLog
+#define glGetProgramInfoLog dglGetProgramInfoLog
+#define glEnableVertexAttribArray dglEnableVertexAttribArray
+#define glDisableVertexAttribArray dglDisableVertexAttribArray
+#define glVertexAttribPointer dglVertexAttribPointer
+#define glActiveTexture dglActiveTexture
+#define glUniformMatrix4fv dglUniformMatrix4fv
+#define glUniform1i dglUniform1i
+#define glUniform1f dglUniform1f
+#define glUniform4fv dglUniform4fv
+#endif
+
 #ifdef _WIN32
 #define wglCopyContext dwglCopyContext
 #define wglCreateContext dwglCreateContext
@@ -841,6 +876,40 @@ typedef void (OGLFUNCCALL *glCombinerParameteriNV_fp)(GLenum, GLint);
 typedef void (OGLFUNCCALL *glCombinerInputNV_fp)(GLenum, GLenum, GLenum, GLenum, GLenum, GLenum);
 typedef void (OGLFUNCCALL *glCombinerOutputNV_fp)(GLenum, GLenum, GLenum, GLenum, GLenum, GLenum, GLenum, GLboolean, GLboolean, GLboolean);
 typedef void (OGLFUNCCALL *glFinalCombinerInputNV_fp)(GLenum, GLenum, GLenum, GLenum);
+
+#if defined(OGL2)
+typedef void (OGLFUNCCALL *glGenerateMipmap_fp)(GLenum target);
+typedef void (OGLFUNCCALL *glGenBuffers_fp)(GLsizei n,  GLuint * buffers);
+typedef void (OGLFUNCCALL *glDeleteBuffers_fp)(GLsizei n,  const GLuint * buffers);
+typedef void (OGLFUNCCALL *glBufferData_fp)(GLenum target,  GLsizeiptr size,  const GLvoid * data,  GLenum usage);
+typedef void (OGLFUNCCALL *glBindBuffer_fp)(GLenum target,  GLuint buffer);
+typedef void (OGLFUNCCALL *glBufferSubData_fp)(GLenum target,  GLintptr offset,  GLsizeiptr size,  const GLvoid * data);
+typedef void (OGLFUNCCALL *glDeleteShader_fp)(GLuint shader);
+typedef void (OGLFUNCCALL *glDeleteProgram_fp)(GLuint program);
+typedef void (OGLFUNCCALL *glUseProgram_fp)(GLuint program);
+typedef GLuint (OGLFUNCCALL *glCreateShader_fp)(GLenum shaderType);
+typedef void (OGLFUNCCALL *glShaderSource_fp)(GLuint shader,  GLsizei count,  const GLchar * const *string,  const GLint *length);
+typedef void (OGLFUNCCALL *glCompileShader_fp)(GLuint shader);
+typedef void (OGLFUNCCALL *glGetShaderiv_fp)(GLuint shader,  GLenum pname,  GLint *params);
+typedef GLuint (OGLFUNCCALL *glCreateProgram_fp)(void);
+typedef void (OGLFUNCCALL *glAttachShader_fp)(GLuint program, GLuint shader);
+typedef void (OGLFUNCCALL *glLinkProgram_fp)(GLuint program);
+typedef void (OGLFUNCCALL *glGetProgramiv_fp)(GLuint program,  GLenum pname,  GLint *params);
+typedef void (OGLFUNCCALL *glGetActiveAttrib_fp)(GLuint program,  GLuint index,  GLsizei bufSize,  GLsizei *length,  GLint *size,  GLenum *type,  GLchar *name);
+typedef GLint (OGLFUNCCALL *glGetAttribLocation_fp)(GLuint program,  const GLchar *name);
+typedef void (OGLFUNCCALL *glGetActiveUniform_fp)(GLuint program,  GLuint index,  GLsizei bufSize,  GLsizei *length,  GLint *size,  GLenum *type,  GLchar *name);
+typedef GLint (OGLFUNCCALL *glGetUniformLocation_fp)(GLuint program,  const GLchar *name);
+typedef void (OGLFUNCCALL *glGetShaderInfoLog_fp)(GLuint shader,  GLsizei maxLength,  GLsizei *length,  GLchar *infoLog);
+typedef void (OGLFUNCCALL *glGetProgramInfoLog_fp)(GLuint program,  GLsizei maxLength,  GLsizei *length,  GLchar *infoLog);
+typedef void (OGLFUNCCALL *glEnableVertexAttribArray_fp)(GLuint index);
+typedef void (OGLFUNCCALL *glDisableVertexAttribArray_fp)(GLuint index);
+typedef void (OGLFUNCCALL *glVertexAttribPointer_fp)(GLuint index,  GLint size,  GLenum type,  GLboolean normalized,  GLsizei stride,  const GLvoid * pointer);
+typedef void (OGLFUNCCALL *glActiveTexture_fp)(GLenum texture);
+typedef void (OGLFUNCCALL *glUniformMatrix4fv_fp)(GLint location,  GLsizei count,  GLboolean transpose,  const GLfloat *value);
+typedef void (OGLFUNCCALL *glUniform1i_fp)(GLint location,  GLint v0);
+typedef void (OGLFUNCCALL *glUniform1f_fp)(GLint location,  GLfloat v0);
+typedef void (OGLFUNCCALL *glUniform4fv_fp)(GLint location,  GLsizei count,  const GLfloat *value);
+#endif
 
 #ifdef _WIN32
 typedef BOOL  (OGLFUNCCALL *wglCopyContext_fp)(HGLRC, HGLRC, UINT);
@@ -1213,6 +1282,40 @@ DEFVAR glCombinerInputNV_fp dglCombinerInputNV;
 DEFVAR glCombinerOutputNV_fp dglCombinerOutputNV;
 DEFVAR glFinalCombinerInputNV_fp dglFinalCombinerInputNV;
 
+#if defined(OGL2)
+DEFVAR glGenerateMipmap_fp dglGenerateMipmap;
+DEFVAR glGenBuffers_fp dglGenBuffers;
+DEFVAR glDeleteBuffers_fp dglDeleteBuffers;
+DEFVAR glBufferData_fp dglBufferData;
+DEFVAR glBindBuffer_fp dglBindBuffer;
+DEFVAR glBufferSubData_fp dglBufferSubData;
+DEFVAR glDeleteShader_fp dglDeleteShader;
+DEFVAR glDeleteProgram_fp dglDeleteProgram;
+DEFVAR glUseProgram_fp dglUseProgram;
+DEFVAR glCreateShader_fp dglCreateShader;
+DEFVAR glShaderSource_fp dglShaderSource;
+DEFVAR glCompileShader_fp dglCompileShader;
+DEFVAR glGetShaderiv_fp dglGetShaderiv;
+DEFVAR glCreateProgram_fp dglCreateProgram;
+DEFVAR glAttachShader_fp dglAttachShader;
+DEFVAR glLinkProgram_fp dglLinkProgram;
+DEFVAR glGetProgramiv_fp dglGetProgramiv;
+DEFVAR glGetActiveAttrib_fp dglGetActiveAttrib;
+DEFVAR glGetAttribLocation_fp dglGetAttribLocation;
+DEFVAR glGetActiveUniform_fp dglGetActiveUniform;
+DEFVAR glGetUniformLocation_fp dglGetUniformLocation;
+DEFVAR glGetShaderInfoLog_fp dglGetShaderInfoLog;
+DEFVAR glGetProgramInfoLog_fp dglGetProgramInfoLog;
+DEFVAR glEnableVertexAttribArray_fp dglEnableVertexAttribArray;
+DEFVAR glDisableVertexAttribArray_fp dglDisableVertexAttribArray;
+DEFVAR glVertexAttribPointer_fp dglVertexAttribPointer;
+DEFVAR glActiveTexture_fp dglActiveTexture;
+DEFVAR glUniformMatrix4fv_fp dglUniformMatrix4fv;
+DEFVAR glUniform1i_fp dglUniform1i;
+DEFVAR glUniform1f_fp dglUniform1f;
+DEFVAR glUniform4fv_fp dglUniform4fv;
+#endif
+
 #ifdef _WIN32
 DEFVAR wglCopyContext_fp dwglCopyContext;
 DEFVAR wglCreateContext_fp dwglCreateContext;
@@ -1241,13 +1344,13 @@ DEFVAR wglSwapMultipleBuffers_fp dwglSwapMultipleBuffers;
 
 // Dynamic module load functions
 #ifdef _WIN32
-static inline void *dll_LoadModule(const char *name)
+void *dll_LoadModule(const char *name)
 {
 	HINSTANCE handle;
 	handle = LoadLibrary(name);
 	return (void *)handle;
 }
-static inline void dll_UnloadModule(void *hdl)
+void dll_UnloadModule(void *hdl)
 {
 	HINSTANCE handle;
 	handle = (HINSTANCE)hdl;
@@ -1257,7 +1360,7 @@ static inline void dll_UnloadModule(void *hdl)
 		FreeLibrary(handle);
 	}
 }
-static void *dll_GetSymbol(void *dllhandle,const char *symname)
+void *dll_GetSymbol(void *dllhandle,const char *symname)
 {
 	if(!dllhandle)
 		return NULL;
@@ -1266,18 +1369,18 @@ static void *dll_GetSymbol(void *dllhandle,const char *symname)
 #endif
 #ifdef __unix__
 #include <dlfcn.h>
-static inline void *dll_LoadModule(const char *name)
+void *dll_LoadModule(const char *name)
 {
 	return (void *)dlopen(name,RTLD_NOW|RTLD_GLOBAL);
 }
-static inline void dll_UnloadModule(void *hdl)
+void dll_UnloadModule(void *hdl)
 {
 	if(hdl)
 	{
 		dlclose(hdl);
 	}
 }
-static void *dll_GetSymbol(void *dllhandle,const char *symname)
+void *dll_GetSymbol(void *dllhandle,const char *symname)
 {
 	if(!dllhandle)
 		return NULL;
@@ -1286,15 +1389,15 @@ static void *dll_GetSymbol(void *dllhandle,const char *symname)
 #endif
 #ifdef macintosh
 #include <SDL.h>
-static inline void *dll_LoadModule(const char *name)
+void *dll_LoadModule(const char *name)
 {
 	return SDL_GL_LoadLibrary(name) ? NULL : (void *) -1;	// return pointer is not dereferenced
 }
-static inline void dll_UnloadModule(void *hdl)
+void dll_UnloadModule(void *hdl)
 {
 	hdl = hdl;	// SDL_GL_UnloadLibrary not exported by SDL
 }
-static void *dll_GetSymbol(void *dllhandle,const char *symname)
+void *dll_GetSymbol(void *dllhandle,const char *symname)
 {
 	if(!dllhandle)
 		return NULL;
@@ -1304,12 +1407,13 @@ static void *dll_GetSymbol(void *dllhandle,const char *symname)
 
 #endif //DECLARE_VARS
 
+void OpenGL_SetFuncsToNull(void);
+
+#ifndef DECLARE_VARS
 // pass true to load the library
 // pass false to unload it
 bool OpenGL_LoadLibrary(bool load, const char *OglLibPath);//load=true removed because not c++
-#ifdef DECLARE_VARS
-static void OpenGL_SetFuncsToNull(void);
-
+#else
 void *OpenGLModuleHandle=NULL;
 bool OpenGL_LoadLibrary(bool load, const char *OglLibPath)
 {
@@ -1698,7 +1802,7 @@ bool OpenGL_LoadLibrary(bool load, const char *OglLibPath)
 	return true;
 }
 
-static void OpenGL_SetFuncsToNull(void)
+void OpenGL_SetFuncsToNull(void)
 {
 	dglAccum = NULL;
 	dglAlphaFunc = NULL;
@@ -2047,6 +2151,40 @@ static void OpenGL_SetFuncsToNull(void)
 	dglCombinerInputNV = NULL;
 	dglCombinerOutputNV = NULL;
 	dglFinalCombinerInputNV = NULL;
+
+#if defined(OGL2)
+    dglGenerateMipmap = NULL;
+    dglGenBuffers = NULL;
+    dglDeleteBuffers = NULL;
+    dglBufferData = NULL;
+    dglBindBuffer = NULL;
+    dglBufferSubData = NULL;
+    dglDeleteShader = NULL;
+    dglDeleteProgram = NULL;
+    dglUseProgram = NULL;
+    dglCreateShader = NULL;
+    dglShaderSource = NULL;
+    dglCompileShader = NULL;
+    dglGetShaderiv = NULL;
+    dglCreateProgram = NULL;
+    dglAttachShader = NULL;
+    dglLinkProgram = NULL;
+    dglGetProgramiv = NULL;
+    dglGetActiveAttrib = NULL;
+    dglGetAttribLocation = NULL;
+    dglGetActiveUniform = NULL;
+    dglGetUniformLocation = NULL;
+    dglGetShaderInfoLog = NULL;
+    dglGetProgramInfoLog = NULL;
+    dglEnableVertexAttribArray = NULL;
+    dglDisableVertexAttribArray = NULL;
+    dglVertexAttribPointer = NULL;
+    dglActiveTexture = NULL;
+    dglUniformMatrix4fv = NULL;
+    dglUniform1i = NULL;
+    dglUniform1f = NULL;
+    dglUniform4fv = NULL;
+#endif
 
 #ifdef _WIN32
 	dwglCopyContext = NULL;

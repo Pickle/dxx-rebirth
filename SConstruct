@@ -471,7 +471,7 @@ class DXXCommon(LazyObjectConstructor):
 	class LinuxPlatformSettings(_PlatformSettings):
 		osdef = '__LINUX__'
 		osasmdef = 'elf'
-		__opengl_libs = ['GL', 'GLU']
+		__opengl_libs = ['GL']
 		__pkg_config_sdl = {}
 		def __init__(self,program,user_settings):
 			DXXCommon._PlatformSettings.__init__(self,program,user_settings)
@@ -594,6 +594,7 @@ class DXXCommon(LazyObjectConstructor):
 			else:
 				message(self, "building with OpenGL")
 			env.Append(CPPDEFINES = ['OGL'])
+			env.Append(CPPDEFINES = ['OGL2'])
 
 		# assembler code?
 		if (self.user_settings.asm == 1) and (self.user_settings.opengl == 0):
@@ -785,6 +786,8 @@ class DXXProgram(DXXCommon):
 		'source':[os.path.join('similar', f) for f in [
 'arch/ogl/gr.cpp',
 'arch/ogl/ogl.cpp',
+'arch/ogl/cshader.cpp',
+'arch/ogl/cbuffer.cpp',
 ]
 ],
 		'transform_target':_apply_target_name,
